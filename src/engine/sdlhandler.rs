@@ -1,20 +1,22 @@
 // render imports
-use sdl2::pixels::Color;
 use sdl2::{Sdl, VideoSubsystem};
-use sdl2::render::WindowCanvas;
+use sdl2::video::{GLContext, Window};
 use sdl2::EventPump;
 use sdl2::gfx::framerate::FPSManager;
-use sdl2::mixer;
+use sdl2::mixer::{self, Music, Chunk, Channel};
 
 // std imports
 use std::error::Error;
 use std::path::Path;
+use std::os::raw::c_void;
 
+// OpenGL imports
+use gl::{self};
 
 /// Main handler to manage calls to the SDL2 API
 pub struct SdlHandler
 {
-    context             : Sdl ,
+    sdl                 : Sdl,
     pub event_pump      : EventPump,
     pub video           : SdlVideoHandler,
     pub fps_manager     : FPSManager,
@@ -26,11 +28,11 @@ impl SdlHandler
     /// Generate a new handler with a new context, window, event pump
     pub fn new() -> Result<SdlHandler, Box<dyn Error>>
     {
-        let context = sdl2::init()?;
+        let sdl = sdl2::init()?;
 
-        let event_pump = context.event_pump()?;
+        let event_pump = sdl.event_pump()?;
 
-        let video = SdlVideoHandler::new(&context, "Rust Testing Grounds")?;
+        let video = SdlVideoHandler::new(&sdl, "Rust Testing Grounds")?;
         let audio = SdlAudioHandler::new()?;
 
         let mut fps_manager = FPSManager::new();
@@ -39,7 +41,7 @@ impl SdlHandler
         Ok(
             SdlHandler
             {
-                context,
+                sdl,
                 event_pump,
                 video,
                 fps_manager,
@@ -49,90 +51,125 @@ impl SdlHandler
     }
 }
 
-/// Component of the SdlHandler to handle all graphics
+/// Component of the SdlHandler to handle all calls to graphic API's
 pub struct SdlVideoHandler
 {
     video_subsystem : VideoSubsystem,
-    canvas          : WindowCanvas,
+    window          : Window,
+    gl_context      : GLContext,   
 }
 
 impl SdlVideoHandler
 {
-    fn new(context: &Sdl, window_name: &str) -> Result<SdlVideoHandler, Box<dyn Error>>
+    fn new(sdl: &Sdl, window_name: &str) -> Result<SdlVideoHandler, Box<dyn Error>>
     {
-        let video_subsystem = context.video()?;
+        let video_subsystem = sdl.video()?;
+
+        {
+            let gl_attr = video_subsystem.gl_attr();
+            gl_attr.set_context_profile(sdl2::video::GLProfile::Core);
+            gl_attr.set_context_version(2, 1);
+        }
      
         let window = video_subsystem.window(window_name, 800, 600)
             .position_centered()
+            .opengl()
+            .resizable()
             .build()?;
      
-        let mut canvas = window.into_canvas().build()?;
+        let gl_context = window.gl_create_context()?;
     
-        canvas.set_draw_color(Color::RGB(0, 255, 255));
-        canvas.clear();
-        canvas.present();
+        let _gl = gl::load_with(|s| video_subsystem.gl_get_proc_address(s) as *const c_void);
 
         Ok(
             SdlVideoHandler
             {
                 video_subsystem,
-                canvas,
+                window,
+                gl_context,
             }
         )
     }
 
-    /// Fill the canvas with the clear colour
-    pub fn canvas_clear(&mut self)
+    /// Set the context's clear colour
+    pub fn gl_set_clear_color(&self, r: f32, g: f32, b: f32, a: f32)
     {
-        self.canvas.clear();
+        unsafe { gl::ClearColor(r, g, b, a) };
     }
 
-    /// Set the canvas' current drawing colour
-    pub fn canvas_set_draw_color(&mut self, c: Color)
+    /// Fill the context with the clear colour
+    pub fn gl_clear(&self)
     {
-        self.canvas.set_draw_color(c);
+        unsafe { gl::Clear(gl::COLOR_BUFFER_BIT) };
     }
 
-    /// Render the canvas
-    pub fn canvas_present(&mut self)
+    pub fn gl_window_swap(&self)
     {
-        self.canvas.present();
+        self.window.gl_swap_window();
     }
 }
 
 
+/// Component of the SdlHandler to handle all calls to SDL_Mixer's API
 pub struct SdlAudioHandler
 {
-    mix_context : mixer::Sdl2MixerContext,
-    music       : Option<Box<mixer::Music<'static>>>,
+    mix_context     : mixer::Sdl2MixerContext,
+    music           : Option<Box<Music<'static>>>,
+    general_channel : Channel,
 }
 
 impl SdlAudioHandler
 {
     fn new() -> Result<SdlAudioHandler, Box<dyn Error>>
     {
-        let init_flags = mixer::InitFlag::all();
+        let mut init_flags = mixer::InitFlag::empty();
+        init_flags.set(mixer::InitFlag::OGG, true);
 
         let mix_context = mixer::init(init_flags)?;
 
-        mixer::allocate_channels(3);
+        mixer::allocate_channels(5);
 
-        mixer::open_audio(44100, mixer::AUDIO_U16, 2, 512)?;
+        mixer::open_audio(44100, mixer::AUDIO_U16, 2, 1024)?;
+
+        let general_channel = Channel::all();
         
         Ok(
             SdlAudioHandler
             {
                 mix_context,
                 music: None,
+                general_channel,
             }
         )
     }
 
+    //----------------
+    // SOUND EFFECTS
+    //----------------
+    pub fn sfx_from_file<P: AsRef<Path>> (&mut self, path: P) -> Result<Box<Chunk>, Box<dyn Error>>
+    {
+        let mut new_chunk = Chunk::from_file(path)?;
+        new_chunk.set_volume(30);
+        let new_chunk = Box::new(new_chunk);
 
-    // functions wrapper to handle music behaviour
+        Ok(new_chunk)
+    }
+
+    pub fn sfx_play(&self, chunk: &Box<Chunk>) -> Result<(), Box<dyn Error>>
+    {
+        let _channel = self.general_channel.play(chunk.as_ref(), 0)?;
+
+        Ok(())
+    }
+    //-----------------------------------------------------------------
+
+
+    //--------
+    // MUSIC
+    //--------
     pub fn music_from_file<P: AsRef<Path>> (&mut self, path: P) -> Result<(), Box<dyn Error>>
     {
-        let new_music = mixer::Music::from_file(path)?;
+        let new_music = Music::from_file(path)?;
         
         self.music = Some(Box::new(new_music));
 
@@ -151,32 +188,32 @@ impl SdlAudioHandler
 
     pub fn music_pause(&self)
     {
-        mixer::Music::pause();
+        Music::pause();
     }
 
     pub fn music_resume(&self)
     {
-        mixer::Music::resume();
+        Music::resume();
     }
 
     pub fn music_rewind(&self)
     {
-        mixer::Music::rewind();
+        Music::rewind();
     }
 
     pub fn music_stop(&self)
     {
-        mixer::Music::halt();
+        Music::halt();
     }
 
     pub fn music_get_volume(&self) -> i32
     {
-        mixer::Music::get_volume()
+        Music::get_volume()
     }
 
     pub fn music_set_volume(&self, volume: i32)
     {
-        mixer::Music::set_volume(volume);
+        Music::set_volume(volume);
     }
-    //-------------------------------------------------------------------
+    //--------------------------------------------------------------
 }

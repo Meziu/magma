@@ -4,7 +4,6 @@ use std::path::Path;
 
 // sdl2 imports
 use sdl2::event::Event;
-use sdl2::pixels::Color;
 
 // import the sdlhandler.rs file
 mod sdlhandler;
@@ -33,16 +32,16 @@ impl Engine
     /// Main function to run the program, returns an error if any panics are necessary
     pub fn run(&mut self) -> Result<(), Box<dyn Error>>
     {
-        let mut i = 0;
+        let mut i: f32 = 0.0;
 
-        self.sdl_manager.audio.music_from_file(Path::new("sample.mp3"))?;
-        self.sdl_manager.audio.music_play(-1)?;
+        let chunk = self.sdl_manager.audio.sfx_from_file(Path::new("example.ogg"))?;
+        self.sdl_manager.audio.sfx_play(&chunk)?;
 
         'mainloop : loop 
         {
-            i = (i + 1) % 255;
-            self.sdl_manager.video.canvas_set_draw_color(Color::RGB(i, 64, 255 - i));
-            self.sdl_manager.video.canvas_clear();
+            i = (i + 1.0/255.0) % 1.0;
+            self.sdl_manager.video.gl_set_clear_color(i, 64.0/255.0, 1.0 - i, 1 as f32);
+            self.sdl_manager.video.gl_clear();
 
             for event in self.sdl_manager.event_pump.poll_iter()
             {
@@ -52,11 +51,9 @@ impl Engine
                 }
             }
     
-            self.sdl_manager.video.canvas_present();
+            self.sdl_manager.video.gl_window_swap();
             self.sdl_manager.fps_manager.delay();
         }
-
-        //self.sdl_manager.
 
         Ok(())
     }
