@@ -4,11 +4,7 @@ use gl::{self};
 
 // std imports
 use std::ffi::{CStr, CString};
-use std::os::raw::c_void;
-use std::path::Path;
-use std::fs::File;
 use std::error::Error;
-use std::io::Read;
 use std::fmt::{self, Display, Debug};
 
 
@@ -43,9 +39,9 @@ impl ShaderProgram {
         let mut success: i32 = 0;
         let info_log = create_whitespace_cstring_with_len(512);
 
-        let vertex_shader = Shader::vert_from_file(Path::new("shader.vert"))?;
+        let vertex_shader = Shader::vert_from_file(include_str!("../../../assets/shader.vert"))?;
 
-        let fragment_shader = Shader::frag_from_file(Path::new("shader.frag"))?;
+        let fragment_shader = Shader::frag_from_file(include_str!("../../../assets/shader.frag"))?;
 
         // SHADER PROGRAM
 
@@ -112,35 +108,25 @@ struct Shader
 }
 
 impl Shader {
-    fn new<P: AsRef<Path>> (path: P, kind: GLenum) -> Result<Shader, Box<dyn Error>> {
-        let mut file = File::open(path)?;
-        let mut source = String::new();
-        file.read_to_string(&mut source).expect("Couldn't read file\n");
-
+    fn new (source: &str, kind: GLenum) -> Result<Shader, Box<dyn Error>> {
         let source = &CString::new(source).unwrap();
         match Shader::shader_from_source(source, kind)
         {
             Ok(id) => return Ok(Shader { id }),
-            Err(e) => return Err(Box::new(ShaderCreationError{})),
+            Err(_) => return Err(Box::new(ShaderCreationError{})),
         };
     }
 
     /// Create a vertex shader
     #[inline(always)]
-    pub fn vert_from_file<P: AsRef<Path>> (path: P) -> Result<Shader, Box<dyn Error>> {
-        Shader::new(path, gl::VERTEX_SHADER)
+    pub fn vert_from_file (source: &str) -> Result<Shader, Box<dyn Error>> {
+        Shader::new(source, gl::VERTEX_SHADER)
     }
 
     /// Create a fragment shader
     #[inline(always)]
-    pub fn frag_from_file<P: AsRef<Path>> (path: P) -> Result<Shader, Box<dyn Error>> {
-        Shader::new(path, gl::FRAGMENT_SHADER)
-    }
-
-    /// Get the shader's id
-    #[inline(always)]
-    pub fn id(&self) -> gl::types::GLuint {
-        self.id
+    pub fn frag_from_file (source: &str) -> Result<Shader, Box<dyn Error>> {
+        Shader::new(source, gl::FRAGMENT_SHADER)
     }
 
     /// Function to create a shader out of a string

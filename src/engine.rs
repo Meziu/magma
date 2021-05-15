@@ -28,9 +28,9 @@ impl Engine {
         let chunk = self
             .sdl_manager
             .audio
-            .sfx_from_file(Path::new("example.ogg"))?;
+            .sfx_from_file(Path::new("assets/example.ogg"))?;
         self.sdl_manager.audio.sfx_play(&chunk)?;
-
+        
         let mut vao : u32 = 0;
         self.sdl_manager.video.hello_triangle_init(&mut vao);
 
