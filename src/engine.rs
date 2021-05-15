@@ -31,11 +31,8 @@ impl Engine {
             .sfx_from_file(Path::new("example.ogg"))?;
         self.sdl_manager.audio.sfx_play(&chunk)?;
 
-        let mut vao: gl::types::GLuint = 0;
-        let mut shader_program: u32 = 0;
-        self.sdl_manager
-            .video
-            .hello_triangle_init(&mut vao, &mut shader_program);
+        let mut vao : u32 = 0;
+        self.sdl_manager.video.hello_triangle_init(&mut vao);
 
         'mainloop: loop {
             i = (i + 1.0 / 255.0) % 1.0;
@@ -50,9 +47,7 @@ impl Engine {
                 }
             }
 
-            self.sdl_manager
-                .video
-                .hello_triangle_draw(shader_program, vao);
+            self.sdl_manager.video.hello_triangle_draw(vao);
 
             self.sdl_manager.video.gl_window_swap();
             self.sdl_manager.fps_manager.delay();

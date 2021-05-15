@@ -5,108 +5,55 @@ use gl::{self};
 // std imports
 use std::ffi::{CStr, CString};
 use std::os::raw::c_void;
+use std::path::Path;
+use std::fs::File;
+use std::error::Error;
+use std::io::Read;
+use std::fmt::{self, Display, Debug};
 
 
 /// Struct to handle all OpenGL API calls
-struct OpenGLHandler {
-    shader_program: ShaderProgram,
+pub struct OpenGLHandler {
+    pub shader_program: ShaderProgram,
+}
+
+impl OpenGLHandler
+{
+    pub fn new() -> Result<OpenGLHandler, Box<dyn Error>> {
+        let shader_program = ShaderProgram::new()?;
+    
+        Ok(
+            OpenGLHandler{
+                shader_program
+            }
+        )
+    }
 }
 
 
 /// Simple struct to handle the shader program OpenGL API
-struct ShaderProgram {
+pub struct ShaderProgram {
     id: GLuint,
 }
 
 impl ShaderProgram {
-    pub fn new() -> Result<ShaderProgram, Box<dyn Error>> {
+    fn new() -> Result<ShaderProgram, Box<dyn Error>> {
         // SHADERS INIT AND COMPILE
 
         let mut success: i32 = 0;
         let info_log = create_whitespace_cstring_with_len(512);
 
-        let vertex_shader_source = &CString::new("#version 120
-            void main()
-            {
-                gl_Position = vec4(gl_Vertex.x, gl_Vertex.y, gl_Vertex.z, 1.0);
-            }");
+        let vertex_shader = Shader::vert_from_file(Path::new("shader.vert"))?;
 
-        const vrtx_sh_src: *const *const u8 = &vertex_shader_source.as_ptr();
-
-        let vertex_shader = unsafe { gl::CreateShader(gl::VERTEX_SHADER) };
-        unsafe {
-            gl::ShaderSource(
-                vertex_shader,
-                1,
-                vrtx_sh_src as *const *const GLchar,
-                0 as *const i32,
-            );
-        };
-        unsafe {
-            gl::CompileShader(vertex_shader);
-
-            gl::GetShaderiv(vertex_shader, gl::COMPILE_STATUS, &mut success as *mut i32);
-
-            if success == gl::FALSE.into() {
-                gl::GetShaderInfoLog(
-                    vertex_shader,
-                    512,
-                    0 as *mut i32,
-                    info_log.as_ptr() as *mut GLchar,
-                );
-                eprintln!(
-                    "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n{}\n",
-                    CStr::from_ptr(info_log.as_ptr()).to_str().unwrap()
-                );
-            }
-        };
-
-        const fragment_shader_source: &str = "#version 120
-            void main()
-            {
-                gl_FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);
-            }\0";
-        const frgmt_sh_src: *const *const u8 = &fragment_shader_source.as_ptr();
-
-        let fragment_shader = unsafe { gl::CreateShader(gl::FRAGMENT_SHADER) };
-        unsafe {
-            gl::ShaderSource(
-                fragment_shader,
-                1,
-                frgmt_sh_src as *const *const GLchar,
-                0 as *const i32,
-            );
-        };
-        unsafe {
-            gl::CompileShader(fragment_shader);
-
-            gl::GetShaderiv(
-                fragment_shader,
-                gl::COMPILE_STATUS,
-                &mut success as *mut i32,
-            );
-
-            if success == gl::FALSE.into() {
-                gl::GetShaderInfoLog(
-                    fragment_shader,
-                    512,
-                    0 as *mut i32,
-                    info_log.as_ptr() as *mut GLchar,
-                );
-                eprintln!(
-                    "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n{}\n",
-                    CStr::from_ptr(info_log.as_ptr()).to_str().unwrap()
-                );
-            }
-        };
+        let fragment_shader = Shader::frag_from_file(Path::new("shader.frag"))?;
 
         // SHADER PROGRAM
 
-        id = unsafe { gl::CreateProgram() };
+        let id = unsafe { gl::CreateProgram() };
 
         unsafe {
-            gl::AttachShader(id, vertex_shader);
-            gl::AttachShader(id, fragment_shader);
+            gl::AttachShader(id, vertex_shader.id);
+            gl::AttachShader(id, fragment_shader.id);
 
             let foo = CString::new("vertexPosition_modelspace").unwrap();
 
@@ -129,7 +76,7 @@ impl ShaderProgram {
     }
 
     #[inline(always)]
-    pub fn use() {
+    pub fn set_used(&self) {
         unsafe { gl::UseProgram(self.id); }
     }
 }
@@ -143,79 +90,115 @@ impl Drop for ShaderProgram {
 }
 
 
+struct ShaderCreationError;
+
+impl Display for ShaderCreationError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "error while creating Shader object")
+    }
+}
+
+impl Debug for ShaderCreationError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{{ file: {}, line: {} }}", file!(), line!())
+    }
+}
+
+impl Error for ShaderCreationError{}
+
 struct Shader
 {
     id : GLuint
 }
 
 impl Shader {
-    fn from_source(source: &CStr, kind: GLenum) -> Result<Shader, String> {
-        let id = shader_from_source(source, kind)?;
-        Ok(Shader { id })
+    fn new<P: AsRef<Path>> (path: P, kind: GLenum) -> Result<Shader, Box<dyn Error>> {
+        let mut file = File::open(path)?;
+        let mut source = String::new();
+        file.read_to_string(&mut source).expect("Couldn't read file\n");
+
+        let source = &CString::new(source).unwrap();
+        match Shader::shader_from_source(source, kind)
+        {
+            Ok(id) => return Ok(Shader { id }),
+            Err(e) => return Err(Box::new(ShaderCreationError{})),
+        };
     }
 
-    pub fn from_vert_source(source: &CStr) -> Result<Shader, String> {
-        Shader::from_source(source, gl::VERTEX_SHADER)
+    /// Create a vertex shader
+    #[inline(always)]
+    pub fn vert_from_file<P: AsRef<Path>> (path: P) -> Result<Shader, Box<dyn Error>> {
+        Shader::new(path, gl::VERTEX_SHADER)
     }
 
-    pub fn from_frag_source(source: &CStr) -> Result<Shader, String> {
-        Shader::from_source(source, gl::FRAGMENT_SHADER)
+    /// Create a fragment shader
+    #[inline(always)]
+    pub fn frag_from_file<P: AsRef<Path>> (path: P) -> Result<Shader, Box<dyn Error>> {
+        Shader::new(path, gl::FRAGMENT_SHADER)
     }
 
+    /// Get the shader's id
+    #[inline(always)]
     pub fn id(&self) -> gl::types::GLuint {
         self.id
     }
-}
 
+    /// Function to create a shader out of a string
+    fn shader_from_source(source: &CStr, kind: gl::types::GLenum) -> Result<gl::types::GLuint, ()> {
+        let mut success: i32 = 0;
+        let info_log = create_whitespace_cstring_with_len(512);
 
-pub fn hello_triangle_init(&self, vao: &mut GLuint, shader_program: &mut u32) {
-    // BUFFER INIT AND BIND
+        let src: *const *const i8 = &source.as_ptr();
 
-    let vertices: [f32; 9] = [
-        -0.5, -0.5, 0.0, // top right
-        0.5, -0.5, 0.0, // bottom right
-        0.0, 0.5, 0.0, // top left
-    ];
+        let id = unsafe { gl::CreateShader(kind) };
+        unsafe {
+            gl::ShaderSource(
+                id,
+                1,
+                src as *const *const GLchar,
+                0 as *const i32,
+            );
+        };
+        unsafe {
+            gl::CompileShader(id);
 
-    let mut vbo: GLuint = 0;
+            gl::GetShaderiv(
+                id,
+                gl::COMPILE_STATUS,
+                &mut success as *mut i32,
+            );
 
-    unsafe {
-        gl::GenBuffers(1, &mut vbo);
-        gl::GenVertexArrays(1, vao);
+            if success == gl::FALSE.into() {
+                gl::GetShaderInfoLog(
+                    id,
+                    512,
+                    0 as *mut i32,
+                    info_log.as_ptr() as *mut GLchar,
+                );
+                
+                let error = format!(
+                    "ERROR::SHADER::{}::COMPILATION_FAILED\n{}\n",
+                    kind,
+                    CStr::from_ptr(info_log.as_ptr()).to_str().unwrap()
+                );
 
-        gl::BindVertexArray(*vao);
+                eprintln!("{}", error);
+                return Err(());
+            }
+        };
 
-        gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
-        gl::BufferData(
-            gl::ARRAY_BUFFER,
-            (9 * std::mem::size_of::<f32>()) as isize,
-            vertices.as_ptr() as *const c_void,
-            gl::STATIC_DRAW,
-        );
-
-        gl::VertexAttribPointer(
-            0,
-            3,
-            gl::FLOAT,
-            gl::FALSE,
-            3 * std::mem::size_of::<f32>() as i32,
-            0 as *const c_void,
-        );
-        gl::EnableVertexAttribArray(0);
-
-        gl::BindBuffer(gl::ARRAY_BUFFER, 0);
-        gl::BindVertexArray(0);
-    };
-}
-
-pub fn hello_triangle_draw(shader_program: u32, vao: GLuint) {
-    unsafe {
-        gl::UseProgram(shader_program);
-        gl::BindVertexArray(vao);
-        gl::DrawArrays(gl::TRIANGLES, 0, 3);
-        gl::BindVertexArray(0);
+        Ok(id)
     }
 }
+
+impl Drop for Shader {
+    fn drop(&mut self) {
+        unsafe {
+            gl::DeleteShader(self.id);
+        }
+    }
+}
+
 
 fn create_whitespace_cstring_with_len(len: usize) -> CString {
     // allocate buffer of correct size
