@@ -76,7 +76,6 @@ impl SdlVideoHandler {
             .window(window_name, 800, 600)
             .position_centered()
             .opengl()
-            .resizable()
             .build()?;
         
         let gl_context = window.gl_create_context()?;
@@ -112,10 +111,11 @@ impl SdlVideoHandler {
     pub fn hello_triangle_init(&self, vao: &mut GLuint) {
         // BUFFER INIT AND BIND
     
-        let vertices: [f32; 9] = [
-            -0.5, -0.5, 0.0, // top right
-            0.5, -0.5, 0.0, // bottom right
-            0.0, 0.5, 0.0, // top left
+        let vertices: [f32; 18] = [
+            // positions       // colors
+             1.0, -1.0, 0.0,   1.0, 0.0, 0.0,   // bottom right
+            -1.0, -1.0, 0.0,   0.0, 1.0, 0.0,   // bottom left
+             0.0,  1.0, 0.0,   0.0, 0.0, 1.0    // top 
         ];
     
         let mut vbo: GLuint = 0;
@@ -129,21 +129,42 @@ impl SdlVideoHandler {
             gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
             gl::BufferData(
                 gl::ARRAY_BUFFER,
-                (9 * std::mem::size_of::<f32>()) as isize,
+                (18 * std::mem::size_of::<f32>()) as isize,
                 vertices.as_ptr() as *const c_void,
                 gl::STATIC_DRAW,
             );
-    
+            
+            // position attribute
             gl::VertexAttribPointer(
                 0,
                 3,
                 gl::FLOAT,
                 gl::FALSE,
-                3 * std::mem::size_of::<f32>() as i32,
+                6 * std::mem::size_of::<f32>() as i32,
                 0 as *const c_void,
             );
+
             gl::EnableVertexAttribArray(0);
+
+            // color attribute
+            gl::VertexAttribPointer(
+                1,
+                3,
+                gl::FLOAT,
+                gl::FALSE,
+                6 * std::mem::size_of::<f32>() as i32,
+                (3 * std::mem::size_of::<f32>()) as *const c_void,
+            );
+
+            gl::BindAttribLocation(
+                self.gl_handler.shader_program.get_id(),
+                1,
+                "vertexColor".as_ptr() as *const GLchar
+            );
+
+            gl::EnableVertexAttribArray(1);
     
+
             gl::BindBuffer(gl::ARRAY_BUFFER, 0);
             gl::BindVertexArray(0);
         };

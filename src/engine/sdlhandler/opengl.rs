@@ -71,6 +71,10 @@ impl ShaderProgram {
         Ok(ShaderProgram { id })
     }
 
+    pub fn get_id(&self) -> u32 {
+        self.id
+    }
+
     #[inline(always)]
     pub fn set_used(&self) {
         unsafe { gl::UseProgram(self.id); }
