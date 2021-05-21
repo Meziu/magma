@@ -30,9 +30,7 @@ impl Engine {
             .audio
             .sfx_from_file(Path::new("assets/example.ogg"))?;
         self.sdl_manager.audio.sfx_play(&chunk)?;
-        
-        let mut vao : u32 = 0;
-        self.sdl_manager.video.hello_triangle_init(&mut vao);
+        let vao = self.sdl_manager.video.hello_triangle_init()?;
 
         'mainloop: loop {
             i = (i + 1.0 / 255.0) % 1.0;
@@ -47,7 +45,7 @@ impl Engine {
                 }
             }
 
-            self.sdl_manager.video.hello_triangle_draw(vao);
+            vao.draw();
 
             self.sdl_manager.video.gl_window_swap();
             self.sdl_manager.fps_manager.delay();

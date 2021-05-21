@@ -11,9 +11,7 @@ use std::os::raw::c_void;
 use std::path::Path;
 
 // OpenGL imports
-use gl::types::*;
 use gl::{self};
-
 
 // import the opengl.rs file
 pub mod opengl;
@@ -51,7 +49,6 @@ impl SdlHandler {
     }
 }
 
-
 /// Component of the SdlHandler to handle all calls to graphic API's
 pub struct SdlVideoHandler {
     video_subsystem: VideoSubsystem,
@@ -77,7 +74,6 @@ impl SdlVideoHandler {
             .position_centered()
             .opengl()
             .build()?;
-        
         let gl_context = window.gl_create_context()?;
         let _gl = gl::load_with(|s| video_subsystem.gl_get_proc_address(s) as *const c_void);
 
@@ -108,78 +104,20 @@ impl SdlVideoHandler {
         self.window.gl_swap_window();
     }
 
-    pub fn hello_triangle_init(&self, vao: &mut GLuint) {
+    pub fn hello_triangle_init(&self) -> Result<VertexArrayObject, Box<dyn Error>> {
         // BUFFER INIT AND BIND
-    
         let vertices: [f32; 18] = [
             // positions       // colors
-             1.0, -1.0, 0.0,   1.0, 0.0, 0.0,   // bottom right
-            -1.0, -1.0, 0.0,   0.0, 1.0, 0.0,   // bottom left
-             0.0,  1.0, 0.0,   0.0, 0.0, 1.0    // top 
+            1.0, -1.0, 0.0, 1.0, 0.0, 0.0, // bottom right
+            -1.0, -1.0, 0.0, 0.0, 1.0, 0.0, // bottom left
+            0.0, 1.0, 0.0, 0.0, 0.0, 1.0, // top
         ];
-    
-        let mut vbo: GLuint = 0;
-    
-        unsafe {
-            gl::GenBuffers(1, &mut vbo);
-            gl::GenVertexArrays(1, vao);
-    
-            gl::BindVertexArray(*vao);
-    
-            gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
-            gl::BufferData(
-                gl::ARRAY_BUFFER,
-                (18 * std::mem::size_of::<f32>()) as isize,
-                vertices.as_ptr() as *const c_void,
-                gl::STATIC_DRAW,
-            );
-            
-            // position attribute
-            gl::VertexAttribPointer(
-                0,
-                3,
-                gl::FLOAT,
-                gl::FALSE,
-                6 * std::mem::size_of::<f32>() as i32,
-                0 as *const c_void,
-            );
 
-            gl::EnableVertexAttribArray(0);
+        let vao = VertexArrayObject::new(vertices, &self.gl_handler.shader_program)?;
 
-            // color attribute
-            gl::VertexAttribPointer(
-                1,
-                3,
-                gl::FLOAT,
-                gl::FALSE,
-                6 * std::mem::size_of::<f32>() as i32,
-                (3 * std::mem::size_of::<f32>()) as *const c_void,
-            );
-
-            gl::BindAttribLocation(
-                self.gl_handler.shader_program.get_id(),
-                1,
-                "vertexColor".as_ptr() as *const GLchar
-            );
-
-            gl::EnableVertexAttribArray(1);
-    
-
-            gl::BindBuffer(gl::ARRAY_BUFFER, 0);
-            gl::BindVertexArray(0);
-        };
-    }
-    
-    pub fn hello_triangle_draw(&self, vao: GLuint) {
-        unsafe {
-            self.gl_handler.shader_program.set_used();
-            gl::BindVertexArray(vao);
-            gl::DrawArrays(gl::TRIANGLES, 0, 3);
-            gl::BindVertexArray(0);
-        }
+        Ok(vao)
     }
 }
-
 
 /// Component of the SdlHandler to handle all calls to SDL_Mixer's API
 pub struct SdlAudioHandler {
