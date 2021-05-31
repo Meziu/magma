@@ -32,12 +32,8 @@ impl Engine {
                 break 'mainloop;
             }
 
-            let resized = self.sdl_manager.get_window_resized();
-            
+            self.sdl_manager.video.update()?;
 
-            self.sdl_manager.video.update(resized)?;
-            self.sdl_manager.set_window_resized(false);
-            
             self.sdl_manager.fps_manager.delay();
         }
 

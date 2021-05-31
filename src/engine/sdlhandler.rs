@@ -23,7 +23,6 @@ pub struct SdlHandler {
     pub audio: SdlAudioHandler,
 
     must_break: bool,
-    window_resized: bool,
 }
 
 impl SdlHandler {
@@ -47,17 +46,17 @@ impl SdlHandler {
             audio,
 
             must_break: false,
-            window_resized: false,
         })
     }
 
+    /// Check all SDL2 and SDL_Window events
     pub fn check_events(&mut self) {
         for event in self.event_pump.poll_iter() {
             match event {
                 Event::Quit { .. } => self.must_break = true,
                 Event::Window { win_event, .. } => {
                     if let WindowEvent::Resized(_, _) = win_event {
-                        self.window_resized = true;
+                        self.video.set_window_resized(true);
                     }
                 }
                 _ => {}
@@ -68,20 +67,15 @@ impl SdlHandler {
     pub fn get_break_signal(&self) -> bool {
         self.must_break
     }
-
-    pub fn get_window_resized(&self) -> bool {
-        self.window_resized
-    }
-    pub fn set_window_resized(&mut self, new_value: bool) {
-        self.window_resized = new_value;
-    }
 }
 
-/// Component of the SdlHandler to handle all calls to graphic API's
+/// Component of the SdlHandler to handle all calls to graphic APIs
 pub struct SdlVideoHandler {
     video_subsystem: VideoSubsystem,
     window: Window,
     gl_handler: GraphicsHandler,
+
+    window_resized: bool,
 }
 
 impl SdlVideoHandler {
@@ -101,11 +95,26 @@ impl SdlVideoHandler {
             video_subsystem,
             window,
             gl_handler,
+            window_resized: false,
         })
     }
 
-    pub fn update(&mut self, resized: bool) -> Result<(), Box<dyn Error>> {
-        self.gl_handler.vulkan_loop(resized, &self.window)
+    pub fn get_window_resized(&self) -> bool {
+        self.window_resized
+    }
+    pub fn set_window_resized(&mut self, new_value: bool) {
+        self.window_resized = new_value;
+    }
+
+    /// Frame-by-frame update of the graphics and everything related
+    pub fn update(&mut self) -> Result<(), Box<dyn Error>> {
+        let resized = self.get_window_resized();
+
+        self.gl_handler.vulkan_loop(resized, &self.window)?;
+
+        self.set_window_resized(false);
+
+        Ok(())
     }
 }
 
