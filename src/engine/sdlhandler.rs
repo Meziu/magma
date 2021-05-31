@@ -72,9 +72,9 @@ impl SdlVideoHandler {
         })
     }
 
-    pub fn update(&mut self, resized: bool)
+    pub fn update(&mut self, resized: bool) -> Result<(), Box<dyn Error>>
     {
-        self.gl_handler.vulkan_loop(resized, &self.window);
+        self.gl_handler.vulkan_loop(resized, &self.window)
     }
 }
 

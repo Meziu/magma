@@ -46,7 +46,7 @@ impl Engine {
                 }
             }
 
-            self.sdl_manager.video.update(resized_window);
+            self.sdl_manager.video.update(resized_window)?;
             self.sdl_manager.fps_manager.delay();
         }
 

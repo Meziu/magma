@@ -132,7 +132,7 @@ impl GraphicsHandler {
 
         let (swapchain, images) = {
             // Get all the device capabilities and limitations
-            let caps = surface.capabilities(physical).unwrap();
+            let caps = surface.capabilities(physical)?;
             let alpha = caps.supported_composite_alpha.iter().next().unwrap();
             let format = caps.supported_formats[0].0;
 
@@ -220,7 +220,7 @@ impl GraphicsHandler {
         })
     }
 
-    pub fn vulkan_loop(&mut self, resized: bool, window: &Window) {
+    pub fn vulkan_loop(&mut self, resized: bool, window: &Window) -> Result<(), Box<dyn Error>> {
         {
             // If the window is being resized, return true, otherwise keep the original value (in case of pending resizes)
             let recreate: bool = {
@@ -236,7 +236,7 @@ impl GraphicsHandler {
 
             // Not an actual error, just a way to signify the need to retry the procedure
             if let Err(_) = swapchain.check_and_recreate(window, pass) {
-                return
+                return Ok(())
             }
         }
         // start of the actual loop code
@@ -246,9 +246,9 @@ impl GraphicsHandler {
                 Ok(r) => r,
                 Err(AcquireError::OutOfDate) => {
                     self.get_swapchain().set_recreate(true);
-                    return;
+                    return Ok(());
                 }
-                Err(e) => panic!("Failed to acquire next image: {:?}", e),
+                Err(e) => return Err(Box::new(e)),
             };
         self.get_swapchain().set_recreate(suboptimal);
 
@@ -259,8 +259,7 @@ impl GraphicsHandler {
             self.device.clone(),
             self.queue.family(),
             CommandBufferUsage::OneTimeSubmit,
-        )
-        .unwrap();
+        )?;
 
         let vao = VertexArray::new(vec!(
             Vertex {
@@ -272,16 +271,15 @@ impl GraphicsHandler {
             Vertex {
                 position: [0.25, -0.1],
             },
-        )).unwrap();
-        let vb = VertexBuffer::new(self.device.clone(), vao).unwrap();
+        ))?;
+        let vb = VertexBuffer::new(self.device.clone(), vao)?;
 
         builder
         .begin_render_pass(
             self.get_swapchain().framebuffers[image_num].clone(),
             SubpassContents::Inline,
             clear_values,
-        )
-        .unwrap()
+        )?
         .draw(
             self.pipeline.clone(),
             &self.get_swapchain().dynamic_state,
@@ -289,19 +287,16 @@ impl GraphicsHandler {
             (),
             (),
             vec![],
-        )
-        .unwrap()
-        .end_render_pass()
-        .unwrap();
+        )?
+        .end_render_pass()?;
 
-        let command_buffer = builder.build().unwrap();
+        let command_buffer = builder.build()?;
 
         let future = self.previous_frame_end
             .take()
             .unwrap()
             .join(acquire_future)
-            .then_execute(self.queue.clone(), command_buffer)
-            .unwrap()
+            .then_execute(self.queue.clone(), command_buffer)?
             .then_swapchain_present(self.queue.clone(), self.get_swapchain().chain.clone(), image_num)
             .then_signal_fence_and_flush();
         
@@ -318,6 +313,7 @@ impl GraphicsHandler {
                 self.previous_frame_end = Some(sync::now(self.device.clone()).boxed());
             }
         }
+        Ok(())
     }
 
     fn get_swapchain(&mut self) -> &mut SwapchainHandler {
@@ -401,7 +397,8 @@ mod fs {
     }
 }
 
-
+/// Called during init and at every resize of the window
+/// There is no error handling, if something goes wrong here, panic is the best solution
 fn window_size_dependent_setup(
     images: &[Arc<SwapchainImage<Sendable<Rc<WindowContext>>>>],
     render_pass: Arc<RenderPass>,
