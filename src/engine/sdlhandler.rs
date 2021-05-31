@@ -1,7 +1,8 @@
 // render imports
+use sdl2::event::{Event, WindowEvent};
 use sdl2::gfx::framerate::FPSManager;
 use sdl2::mixer::{self, Channel, Chunk, Music};
-use sdl2::video::{Window};
+use sdl2::video::Window;
 use sdl2::EventPump;
 use sdl2::{Sdl, VideoSubsystem};
 
@@ -16,10 +17,13 @@ use vulkan::*;
 /// Main handler to manage calls to the SDL2 API
 pub struct SdlHandler {
     sdl: Sdl,
-    pub event_pump: EventPump,
+    event_pump: EventPump,
     pub video: SdlVideoHandler,
     pub fps_manager: FPSManager,
     pub audio: SdlAudioHandler,
+
+    must_break: bool,
+    window_resized: bool,
 }
 
 impl SdlHandler {
@@ -41,7 +45,35 @@ impl SdlHandler {
             video,
             fps_manager,
             audio,
+
+            must_break: false,
+            window_resized: false,
         })
+    }
+
+    pub fn check_events(&mut self) {
+        for event in self.event_pump.poll_iter() {
+            match event {
+                Event::Quit { .. } => self.must_break = true,
+                Event::Window { win_event, .. } => {
+                    if let WindowEvent::Resized(_, _) = win_event {
+                        self.window_resized = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    pub fn get_break_signal(&self) -> bool {
+        self.must_break
+    }
+
+    pub fn get_window_resized(&self) -> bool {
+        self.window_resized
+    }
+    pub fn set_window_resized(&mut self, new_value: bool) {
+        self.window_resized = new_value;
     }
 }
 
@@ -72,8 +104,7 @@ impl SdlVideoHandler {
         })
     }
 
-    pub fn update(&mut self, resized: bool) -> Result<(), Box<dyn Error>>
-    {
+    pub fn update(&mut self, resized: bool) -> Result<(), Box<dyn Error>> {
         self.gl_handler.vulkan_loop(resized, &self.window)
     }
 }
