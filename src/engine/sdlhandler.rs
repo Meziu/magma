@@ -1,21 +1,17 @@
 // render imports
 use sdl2::gfx::framerate::FPSManager;
 use sdl2::mixer::{self, Channel, Chunk, Music};
-use sdl2::video::{GLContext, Window};
+use sdl2::video::{Window};
 use sdl2::EventPump;
 use sdl2::{Sdl, VideoSubsystem};
 
 // std imports
 use std::error::Error;
-use std::os::raw::c_void;
 use std::path::Path;
 
-// OpenGL imports
-use gl::{self};
-
-// import the opengl.rs file
-pub mod opengl;
-use opengl::*;
+// import the vulkan.rs file
+pub mod vulkan;
+use vulkan::*;
 
 /// Main handler to manage calls to the SDL2 API
 pub struct SdlHandler {
@@ -53,69 +49,32 @@ impl SdlHandler {
 pub struct SdlVideoHandler {
     video_subsystem: VideoSubsystem,
     window: Window,
-    gl_context: GLContext,
-    gl_handler: OpenGLHandler,
+    gl_handler: GraphicsHandler,
 }
 
 impl SdlVideoHandler {
     fn new(sdl: &Sdl, window_name: &str) -> Result<SdlVideoHandler, Box<dyn Error>> {
         let video_subsystem = sdl.video()?;
 
-        {
-            let gl_attr = video_subsystem.gl_attr();
-            gl_attr.set_context_profile(sdl2::video::GLProfile::Core);
-            gl_attr.set_context_version(2, 1);
-            // DEBUG CONTEXT
-            gl_attr.set_context_flags().debug().set();
-        }
-
         let window = video_subsystem
             .window(window_name, 800, 600)
             .position_centered()
-            .opengl()
+            .vulkan()
+            .resizable()
             .build()?;
-        let gl_context = window.gl_create_context()?;
-        let _gl = gl::load_with(|s| video_subsystem.gl_get_proc_address(s) as *const c_void);
 
-        let gl_handler = OpenGLHandler::new()?;
+        let gl_handler = GraphicsHandler::new(&window)?;
 
         Ok(SdlVideoHandler {
             video_subsystem,
             window,
-            gl_context,
             gl_handler,
         })
     }
 
-    /// Set the context's clear colour
-    #[inline(always)]
-    pub fn gl_set_clear_color(&self, r: f32, g: f32, b: f32, a: f32) {
-        unsafe { gl::ClearColor(r, g, b, a) };
-    }
-
-    /// Fill the context with the clear colour
-    #[inline(always)]
-    pub fn gl_clear(&self) {
-        unsafe { gl::Clear(gl::COLOR_BUFFER_BIT) };
-    }
-
-    #[inline(always)]
-    pub fn gl_window_swap(&self) {
-        self.window.gl_swap_window();
-    }
-
-    pub fn hello_triangle_init(&self) -> Result<VertexArrayObject, Box<dyn Error>> {
-        // BUFFER INIT AND BIND
-        let vertices: [f32; 18] = [
-            // positions       // colors
-            1.0, -1.0, 0.0, 1.0, 0.0, 0.0, // bottom right
-            -1.0, -1.0, 0.0, 0.0, 1.0, 0.0, // bottom left
-            0.0, 1.0, 0.0, 0.0, 0.0, 1.0, // top
-        ];
-
-        let vao = VertexArrayObject::new(vertices, &self.gl_handler.shader_program)?;
-
-        Ok(vao)
+    pub fn update(&mut self, resized: bool)
+    {
+        self.gl_handler.vulkan_loop(resized, &self.window);
     }
 }
 
