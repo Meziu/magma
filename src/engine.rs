@@ -2,39 +2,39 @@
 use std::error::Error;
 use std::path::Path;
 
-// import the sdlhandler.rs file
-mod sdlhandler;
-use sdlhandler::SdlHandler;
+// import the ctx mdule
+mod ctx;
+use ctx::CtxHandler;
 
 /// Main struct to handle the whole program in all it's components
 pub struct Engine {
-    pub sdl_manager: SdlHandler,
+    ctx_handler: CtxHandler,
 }
 
 impl Engine {
     pub fn new() -> Result<Engine, Box<dyn Error>> {
-        let sdl_manager = SdlHandler::new()?;
+        let ctx_handler = CtxHandler::new()?;
 
-        Ok(Engine { sdl_manager })
+        Ok(Engine { ctx_handler })
     }
 
     /// Main function to run the program, returns an error if any panics are necessary
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
         let chunk = self
-            .sdl_manager
+            .ctx_handler
             .audio
             .sfx_from_file(Path::new("assets/example.ogg"))?;
-        self.sdl_manager.audio.sfx_play(&chunk)?;
+        self.ctx_handler.audio.sfx_play(&chunk)?;
 
         'mainloop: loop {
-            self.sdl_manager.check_events();
-            if self.sdl_manager.get_break_signal() {
+            self.ctx_handler.check_events();
+            if self.ctx_handler.get_break_signal() {
                 break 'mainloop;
             }
 
-            self.sdl_manager.video.update()?;
+            self.ctx_handler.video.update()?;
 
-            self.sdl_manager.fps_manager.delay();
+            self.ctx_handler.fps_manager.delay();
         }
 
         Ok(())
