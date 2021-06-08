@@ -1,6 +1,6 @@
 use std::process;
 
-use sdlfun::engine::Engine;
+use pholidota::Engine;
 
 fn main() {
     let main_engine = Engine::new(); // create the Engine instance

@@ -134,6 +134,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "pholidota"
+version = "0.1.0"
+dependencies = [
+ "sdl2",
+ "vulkano",
+ "vulkano-shaders",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -188,15 +197,6 @@ dependencies = [
  "cfg-if 0.1.10",
  "libc",
  "version-compare",
-]
-
-[[package]]
-name = "sdlfun"
-version = "0.1.0"
-dependencies = [
- "sdl2",
- "vulkano",
- "vulkano-shaders",
 ]
 
 [[package]]
