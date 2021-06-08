@@ -4,8 +4,7 @@ use std::path::Path;
 use std::fmt::{Display, Formatter, Debug};
 
 // import the ctx mdule
-mod ctx;
-use ctx::{CtxHandler, CtxHandlerInitError, GraphicsLoopError};
+use super::ctx::{CtxHandler, CtxHandlerInitError, GraphicsLoopError};
 
 /// Main struct to handle the whole program in all it's components
 pub struct Engine {
