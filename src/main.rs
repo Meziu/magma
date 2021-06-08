@@ -1,12 +1,10 @@
-use std::process;
-
 use pholidota::Engine;
 
 fn main() {
     let main_engine = Engine::new(); // create the Engine instance
     if let Err(e) = main_engine { // if there are any errors on the Engine init
         eprintln!("{}", e); // print the traceback
-        process::exit(1); // close the program early
+        return; // close the program early
     }
 
     let mut main_engine = main_engine.unwrap(); // safe unwrap
