@@ -1,12 +1,14 @@
 // SDL2 imports
 use sdl2::video::Window;
 use sdl2::{Sdl, VideoSubsystem};
+use sdl2::video::WindowBuildError;
 
 // std imports
+use std::fmt::{Display, Formatter, Debug};
 use std::error::Error;
 
 // vulkan implementation imports
-use super::vulkan::{GraphicsHandler, GraphicsLoopError};
+use super::vulkan::{GraphicsHandler, GraphicsLoopError, GraphicsHandlerCreationError};
 
 
 /// Component of the CtxHandler to handle all calls to graphic APIs
@@ -19,7 +21,7 @@ pub struct VideoHandler {
 }
 
 impl VideoHandler {
-    pub fn new(ctx: &Sdl, window_name: &str) -> Result<VideoHandler, Box<dyn Error>> {
+    pub fn new(ctx: &Sdl, window_name: &str) -> Result<VideoHandler, VideoHandlerInitError> {
         let video_subsystem = ctx.video()?;
 
         let window = video_subsystem
@@ -57,3 +59,43 @@ impl VideoHandler {
         Ok(())
     }
 }
+
+
+#[derive(Debug)]
+pub enum VideoHandlerInitError {
+    ByString(String),
+    FromGraphicsInit(GraphicsHandlerCreationError),
+    FromWindowBuild(WindowBuildError),
+}
+
+impl Display for VideoHandlerInitError {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        let out = match self {
+            Self::ByString(e) => format!("From String: {}", e),
+            Self::FromGraphicsInit(e) => format!("On Graphics Init: {}", e),
+            Self::FromWindowBuild(e) => format!("On Window Build: {}", e),
+        };
+
+        write!(f, "Video Handler Init Error: {}", out)
+    }
+}
+
+impl From<String> for VideoHandlerInitError {
+    fn from(e: String) -> Self {
+        Self::ByString(e)
+    }
+}
+
+impl From<GraphicsHandlerCreationError> for VideoHandlerInitError {
+    fn from(e: GraphicsHandlerCreationError) -> Self {
+        Self::FromGraphicsInit(e)
+    }
+}
+
+impl From<WindowBuildError> for VideoHandlerInitError {
+    fn from(e: WindowBuildError) -> Self {
+        Self::FromWindowBuild(e)
+    }
+}
+
+impl Error for VideoHandlerInitError {}

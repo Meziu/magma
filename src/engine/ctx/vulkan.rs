@@ -101,7 +101,7 @@ impl SwapchainHandler {
 }
 
 impl GraphicsHandler {
-    pub fn new(window: &Window) -> Result<GraphicsHandler, GraphicsHandlerCreationError> {
+    pub fn new(window: &Window) -> Result<Self, GraphicsHandlerCreationError> {
         // Vulkan instancing and init
         let instance_extensions = window.vulkan_instance_extensions()?;
         let raw_instance_extensions = RawInstanceExtensions::new(
@@ -216,7 +216,7 @@ impl GraphicsHandler {
         };
 
         let previous_frame_end = Some(sync::now(device.clone()).boxed());
-        Ok(GraphicsHandler {
+        Ok(Self {
             instance: instance.clone(),
             swapchain,
             render_pass: render_pass.clone(),
@@ -333,6 +333,7 @@ impl GraphicsHandler {
     }
 }
 
+/// Unrecoverable error to signify problems during the vulkan init
 #[derive(Debug)]
 pub enum GraphicsHandlerCreationError {
     ByString(String),
@@ -347,49 +348,49 @@ pub enum GraphicsHandlerCreationError {
 
 impl From<OomError> for GraphicsHandlerCreationError {
     fn from(_: OomError) -> Self {
-        GraphicsHandlerCreationError::OutOfMemory
+        Self::OutOfMemory
     }
 }
 
 impl From<String> for GraphicsHandlerCreationError {
     fn from(e: String) -> Self {
-        GraphicsHandlerCreationError::ByString(e)
+        Self::ByString(e)
     }
 }
 
 impl From<InstanceCreationError> for GraphicsHandlerCreationError {
     fn from(e: InstanceCreationError) -> Self {
-        GraphicsHandlerCreationError::OnInstanceCreation(e)
+        Self::OnInstanceCreation(e)
     }
 }
 
 impl From<DeviceCreationError> for GraphicsHandlerCreationError {
     fn from(e: DeviceCreationError) -> Self {
-        GraphicsHandlerCreationError::OnDeviceCreation(e)
+        Self::OnDeviceCreation(e)
     }
 }
 
 impl From<CapabilitiesError> for GraphicsHandlerCreationError {
     fn from(e: CapabilitiesError) -> Self {
-        GraphicsHandlerCreationError::ForCapabilities(e)
+        Self::ForCapabilities(e)
     }
 }
 
 impl From<SwapchainCreationError> for GraphicsHandlerCreationError {
     fn from(e: SwapchainCreationError) -> Self {
-        GraphicsHandlerCreationError::OnSwapchainCreation(e)
+        Self::OnSwapchainCreation(e)
     }
 }
 
 impl From<GraphicsPipelineCreationError> for GraphicsHandlerCreationError {
     fn from(e: GraphicsPipelineCreationError) -> Self {
-        GraphicsHandlerCreationError::OnPipelineCreation(e)
+        Self::OnPipelineCreation(e)
     }
 }
 
 impl From<RenderPassCreationError> for GraphicsHandlerCreationError {
     fn from(e: RenderPassCreationError) -> Self {
-        GraphicsHandlerCreationError::OnRenderPassCreation(e)
+        Self::OnRenderPassCreation(e)
     }
 }
 
@@ -413,6 +414,7 @@ impl Display for GraphicsHandlerCreationError {
 impl Error for GraphicsHandlerCreationError {}
 
 
+/// Unrecoverable error to signify problems during the vulkan render process and loop
 #[derive(Debug)]
 pub enum GraphicsLoopError {
     OnAcquire(AcquireError),
@@ -446,49 +448,49 @@ impl Error for GraphicsLoopError {}
 
 impl From<AcquireError> for GraphicsLoopError {
     fn from(e: AcquireError) -> Self {
-        GraphicsLoopError::OnAcquire(e)
+        Self::OnAcquire(e)
     }
 }
 
 impl From<BuildError> for GraphicsLoopError {
     fn from(e: BuildError) -> Self {
-        GraphicsLoopError::OnCommandBufferBuild(e)
+        Self::OnCommandBufferBuild(e)
     }
 }
 
 impl From<CommandBufferExecError> for GraphicsLoopError {
     fn from(e: CommandBufferExecError) -> Self {
-        GraphicsLoopError::OnCommandBufferExec(e)
+        Self::OnCommandBufferExec(e)
     }
 }
 
 impl From<BeginRenderPassError> for GraphicsLoopError {
     fn from(e: BeginRenderPassError) -> Self {
-        GraphicsLoopError::OnRenderPassBegin(e)
+        Self::OnRenderPassBegin(e)
     }
 }
 
 impl From<DrawError> for GraphicsLoopError {
     fn from(e: DrawError) -> Self {
-        GraphicsLoopError::OnDraw(e)
+        Self::OnDraw(e)
     }
 }
 
 impl From<AutoCommandBufferBuilderContextError> for GraphicsLoopError {
     fn from(e: AutoCommandBufferBuilderContextError) -> Self {
-        GraphicsLoopError::InAutoCommandBufferBuilderContext(e)
+        Self::InAutoCommandBufferBuilderContext(e)
     }
 }
 
 impl From<DeviceMemoryAllocError> for GraphicsLoopError {
     fn from(e: DeviceMemoryAllocError) -> Self {
-        GraphicsLoopError::OnDeviceMemoryAlloc(e)
+        Self::OnDeviceMemoryAlloc(e)
     }
 }
 
 impl From<OomError> for GraphicsLoopError {
     fn from(_: OomError) -> Self {
-        GraphicsLoopError::OutOfMemory
+        Self::OutOfMemory
     }
 }
 
@@ -507,7 +509,7 @@ struct VertexArray {
 
 impl From<Vec<Vertex>> for VertexArray {
     fn from(vec: Vec<Vertex>) -> Self {
-        VertexArray { data: vec }
+        Self { data: vec }
     }
 }
 
@@ -520,7 +522,7 @@ impl VertexBuffer {
     pub fn new(
         device: Arc<Device>,
         array: VertexArray,
-    ) -> Result<VertexBuffer, DeviceMemoryAllocError> {
+    ) -> Result<Self, DeviceMemoryAllocError> {
         let buffer = CpuAccessibleBuffer::from_iter(
             device,
             BufferUsage::all(),
@@ -528,7 +530,7 @@ impl VertexBuffer {
             array.data.iter().cloned(),
         )?;
 
-        Ok(VertexBuffer { buffer })
+        Ok(Self { buffer })
     }
 }
 

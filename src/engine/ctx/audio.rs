@@ -1,6 +1,5 @@
 // std imports
 use std::path::Path;
-use std::error::Error;
 
 // SDL2 imports
 use sdl2::mixer::{self, Channel, Chunk, Music};
@@ -14,7 +13,7 @@ pub struct AudioHandler {
 }
 
 impl AudioHandler {
-    pub fn new() -> Result<AudioHandler, Box<dyn Error>> {
+    pub fn new() -> Result<AudioHandler, String> {
         let mut init_flags = mixer::InitFlag::empty();
         init_flags.set(mixer::InitFlag::OGG, true);
 
@@ -36,7 +35,7 @@ impl AudioHandler {
     //----------------
     // SOUND EFFECTS
     //----------------
-    pub fn sfx_from_file<P: AsRef<Path>>(&mut self, path: P) -> Result<Box<Chunk>, Box<dyn Error>> {
+    pub fn sfx_from_file<P: AsRef<Path>>(&mut self, path: P) -> Result<Box<Chunk>, String> {
         let mut new_chunk = Chunk::from_file(path)?;
         new_chunk.set_volume(30);
         let new_chunk = Box::new(new_chunk);
@@ -44,7 +43,7 @@ impl AudioHandler {
         Ok(new_chunk)
     }
 
-    pub fn sfx_play(&self, chunk: &Box<Chunk>) -> Result<(), Box<dyn Error>> {
+    pub fn sfx_play(&self, chunk: &Box<Chunk>) -> Result<(), String> {
         let _channel = self.general_channel.play(chunk.as_ref(), 0)?;
 
         Ok(())
@@ -53,14 +52,14 @@ impl AudioHandler {
     //--------
     // MUSIC
     //--------
-    pub fn music_from_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Box<dyn Error>> {
+    pub fn music_from_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), String> {
         let new_music = Music::from_file(path)?;
         self.music = Some(Box::new(new_music));
 
         Ok(())
     }
 
-    pub fn music_play(&self, loops: i32) -> Result<(), Box<dyn Error>> {
+    pub fn music_play(&self, loops: i32) -> Result<(), String> {
         if let Some(m) = &self.music {
             m.play(loops)?;
         }
