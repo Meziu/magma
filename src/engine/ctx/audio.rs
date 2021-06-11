@@ -35,13 +35,13 @@ impl AudioHandler {
     //----------------
     // SOUND EFFECTS
     //----------------
-    pub fn sfx_from_file<P: AsRef<Path>>(&mut self, path: P) -> SoundEffect {
+    pub fn sfx_from_file(&mut self, path: &Path) -> SoundEffect {
         let new_chunk = match Chunk::from_file(path) {
             Ok(chunk) => {
                 Some(Box::new(chunk))
             },
             Err(e) => {
-                eprintln!("Couldn't load SFX from file: {}", e); 
+                eprintln!("Couldn't load SFX from file \'{}\': {}", path.display(), e); 
                 None
             },
         };
@@ -71,7 +71,7 @@ impl AudioHandler {
     //--------
     // MUSIC
     //--------
-    pub fn music_from_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), ()> {
+    pub fn music_from_file(&mut self, path: &Path) -> Result<(), ()> {
         match Music::from_file(path) {
             Ok(music) => {
                 self.music = Some(Box::new(music));
@@ -79,7 +79,7 @@ impl AudioHandler {
                 Ok(())
             },
             Err(e) => {
-                eprintln!("Couldn't play music: {}", e);
+                eprintln!("Couldn't load music from file \'{}\': {}", path.display(), e);
                 Err(())
             },
         }

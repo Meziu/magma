@@ -19,19 +19,16 @@ impl Engine {
 
     /// Main function to run the program
     pub fn run(&mut self) {
-        match self
+        if let Ok(_) = self
             .ctx_handler
             .audio
             .music_from_file(Path::new("assets/example.ogg"))
         {
-            Ok(_) => {
-                println!("Music was loaded fine!");
-                match self.ctx_handler.audio.music_play(-1) {
-                    Ok(_) => println!("Music played fine!"),
-                    Err(_) => println!("Music couldn't play..."),
-                }
+            println!("Music was loaded fine!");
+            match self.ctx_handler.audio.music_play(-1) {
+                Ok(_) => println!("Music played fine!"),
+                Err(_) => println!("Music couldn't play..."),
             }
-            Err(_) => println!("Music couldn't be loaded..."),
         }
 
         'mainloop: loop {
