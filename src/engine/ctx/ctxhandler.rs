@@ -20,8 +20,8 @@ pub struct CtxHandler {
 }
 
 impl CtxHandler {
-    /// Generate a new handler with a new context, window, event pump
-    pub fn new() -> CtxHandler {
+    /// Generate a new handler with a new context, window, graphics handler, event pump, audio mixer
+    pub fn new(framerate: u32) -> CtxHandler {
         let ctx = sdl2::init().expect("Couldn't init SDL2 context");
 
         let event_pump = ctx.event_pump().expect("Couldn't obtain Event Pump from SDL2 context");
@@ -30,7 +30,7 @@ impl CtxHandler {
         let audio = AudioHandler::new();
 
         let mut fps_manager = FPSManager::new();
-        fps_manager.set_framerate(60u32).unwrap();
+        CtxHandler::_set_framerate(&mut fps_manager, framerate);
 
         CtxHandler {
             ctx,
@@ -58,7 +58,30 @@ impl CtxHandler {
         }
     }
 
+    /// Fetch the flag to stop the program
     pub fn get_break_signal(&self) -> bool {
         self.must_break
+    }
+
+    /// Public function to set the Ctx's framerate
+    pub fn set_framerate(&mut self, new_framerate: u32) {
+        CtxHandler::_set_framerate(&mut self.fps_manager, new_framerate);
+    }
+
+    /// Private function to set framerate using FPSManager (unsafe in a public environment)
+    fn _set_framerate(fps_manager: &mut FPSManager, new_framerate: u32) {
+        if let Err(e) = fps_manager.set_framerate(new_framerate) {
+            eprintln!("Couldn't set framerate to {}: {}", new_framerate, e);
+        }
+    }
+
+    /// Get the current framerate
+    pub fn get_framerate(&self) -> i32 {
+        self.fps_manager.get_framerate()
+    }
+
+    /// Wait for the next frame based on the current framerate
+    pub fn wait(&mut self) {
+        self.fps_manager.delay();
     }
 }

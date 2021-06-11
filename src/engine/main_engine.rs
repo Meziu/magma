@@ -11,19 +11,28 @@ pub struct Engine {
 
 impl Engine {
     /// Engine init process
-    pub fn new() -> Self{
-        let ctx_handler = CtxHandler::new();
+    pub fn new() -> Self {
+        let ctx_handler = CtxHandler::new(60);
 
         Self { ctx_handler }
     }
 
-    /// Main function to run the program, returns an error if any panics are necessary
+    /// Main function to run the program
     pub fn run(&mut self) {
-        let chunk = self
+        match self
             .ctx_handler
             .audio
-            .sfx_from_file(Path::new("assets/example.ogg"));
-        self.ctx_handler.audio.sfx_play(&chunk);
+            .music_from_file(Path::new("assets/example.ogg"))
+        {
+            Ok(_) => {
+                println!("Music was loaded fine!");
+                match self.ctx_handler.audio.music_play(-1) {
+                    Ok(_) => println!("Music played fine!"),
+                    Err(_) => println!("Music couldn't play..."),
+                }
+            }
+            Err(_) => println!("Music couldn't be loaded..."),
+        }
 
         'mainloop: loop {
             self.ctx_handler.check_events();
@@ -33,7 +42,7 @@ impl Engine {
 
             self.ctx_handler.video.update();
 
-            self.ctx_handler.fps_manager.delay();
+            self.ctx_handler.wait();
         }
     }
 }

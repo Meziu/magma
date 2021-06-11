@@ -35,23 +35,27 @@ impl AudioHandler {
     //----------------
     // SOUND EFFECTS
     //----------------
-    pub fn sfx_from_file<P: AsRef<Path>>(&mut self, path: P) -> Option<Box<Chunk>> {
-        match Chunk::from_file(path) {
-            Ok(mut chunk) => {
-                chunk.set_volume(30);
+    pub fn sfx_from_file<P: AsRef<Path>>(&mut self, path: P) -> SoundEffect {
+        let new_chunk = match Chunk::from_file(path) {
+            Ok(chunk) => {
                 Some(Box::new(chunk))
             },
             Err(e) => {
                 eprintln!("Couldn't load SFX from file: {}", e); 
                 None
             },
-        }
+        };
+
+        SoundEffect {data: new_chunk, volume: 30,}
     }
 
-    pub fn sfx_play(&self, chunk: &Option<Box<Chunk>>) -> Option<Channel> {
-        if let Some(chunk_box) = chunk {
+    pub fn sfx_play(&self, chunk: &SoundEffect) -> Option<Channel> {
+        if let Some(chunk_box) = &chunk.data {
             match self.general_channel.play(chunk_box.as_ref(), 0) {
-                Ok(c) => Some(c),
+                Ok(c) => {
+                    c.set_volume(30);
+                    Some(c)
+                },
                 Err(e) => {
                     eprintln!("Couldn't play SFX: {}", e);
                     None
@@ -67,11 +71,18 @@ impl AudioHandler {
     //--------
     // MUSIC
     //--------
-    pub fn music_from_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), String> {
-        let new_music = Music::from_file(path)?;
-        self.music = Some(Box::new(new_music));
-
-        Ok(())
+    pub fn music_from_file<P: AsRef<Path>>(&mut self, path: P) -> Result<(), ()> {
+        match Music::from_file(path) {
+            Ok(music) => {
+                self.music = Some(Box::new(music));
+                self.music_set_volume(30);
+                Ok(())
+            },
+            Err(e) => {
+                eprintln!("Couldn't play music: {}", e);
+                Err(())
+            },
+        }
     }
 
     pub fn music_play(&self, loops: i32) -> Result<(), String> {
@@ -105,4 +116,9 @@ impl AudioHandler {
     pub fn music_set_volume(&self, volume: i32) {
         Music::set_volume(volume);
     }
+}
+
+pub struct SoundEffect {
+    data: Option<Box<Chunk>>,
+    volume: i32,
 }
