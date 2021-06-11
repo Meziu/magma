@@ -5,5 +5,4 @@ mod video;
 pub mod ctxhandler;
 
 
-pub use ctxhandler::{CtxHandler, CtxHandlerInitError};
-pub use vulkan::GraphicsLoopError;
+pub use ctxhandler::CtxHandler;

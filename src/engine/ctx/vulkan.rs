@@ -1,7 +1,5 @@
 // standard imports
 use std::cmp::{max, min};
-use std::error::Error;
-use std::fmt::{Display, Debug, Formatter};
 use std::ffi::CString;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -9,26 +7,24 @@ use std::sync::Arc;
 // Vulkano imports
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
 use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, AutoCommandBufferBuilderContextError, BeginRenderPassError,
-    BuildError, CommandBufferExecError, CommandBufferUsage, DrawError, DynamicState,
+    AutoCommandBufferBuilder, CommandBufferUsage, DynamicState,
     SubpassContents,
 };
 use vulkano::descriptor::PipelineLayoutAbstract;
-use vulkano::device::{Device, DeviceExtensions, Queue, DeviceCreationError};
+use vulkano::device::{Device, DeviceExtensions, Queue};
 use vulkano::image::view::ImageView;
 use vulkano::image::{ImageUsage, SwapchainImage};
-use vulkano::instance::{Instance, PhysicalDevice, RawInstanceExtensions, InstanceCreationError};
+use vulkano::instance::{Instance, PhysicalDevice, RawInstanceExtensions};
 use vulkano::memory::DeviceMemoryAllocError;
 use vulkano::pipeline::vertex::SingleBufferDefinition;
 use vulkano::pipeline::viewport::Viewport;
-use vulkano::pipeline::{GraphicsPipeline, GraphicsPipelineCreationError};
+use vulkano::pipeline::{GraphicsPipeline};
 use vulkano::render_pass::RenderPass;
-use vulkano::render_pass::{Framebuffer, FramebufferAbstract, Subpass, RenderPassCreationError};
+use vulkano::render_pass::{Framebuffer, FramebufferAbstract, Subpass};
 use vulkano::swapchain;
-use vulkano::swapchain::{AcquireError, Surface, Swapchain, SwapchainCreationError, CapabilitiesError};
+use vulkano::swapchain::{AcquireError, Surface, Swapchain, SwapchainCreationError};
 use vulkano::sync;
 use vulkano::sync::{FlushError, GpuFuture};
-use vulkano::OomError;
 use vulkano::VulkanObject;
 
 // SDL2 imports
@@ -101,18 +97,18 @@ impl SwapchainHandler {
 }
 
 impl GraphicsHandler {
-    pub fn new(window: &Window) -> Result<Self, GraphicsHandlerCreationError> {
+    pub fn new(window: &Window) -> Self {
         // Vulkan instancing and init
-        let instance_extensions = window.vulkan_instance_extensions()?;
+        let instance_extensions = window.vulkan_instance_extensions().expect("Couldn't obtain Vulkan Instance Extensions from the Window");
         let raw_instance_extensions = RawInstanceExtensions::new(
             instance_extensions
                 .iter()
                 .map(|&v| CString::new(v).unwrap()),
         );
 
-        let instance = Instance::new(None, raw_instance_extensions, None)?;
+        let instance = Instance::new(None, raw_instance_extensions, None).expect("Couldn't create a new Vulkan instance");
 
-        let surface_handle = window.vulkan_create_surface(instance.internal_object())?;
+        let surface_handle = window.vulkan_create_surface(instance.internal_object()).expect("Couldn't create a new surface from the Vulkan Instance");
         // Use the SDL2 surface from the Window as surface
         let surface = unsafe {
             Arc::new(Surface::from_raw_surface(
@@ -138,13 +134,13 @@ impl GraphicsHandler {
             physical.supported_features(),
             &device_ext,
             [(queue_family, 0.5)].iter().cloned(),
-        )?;
+        ).expect("Couldn't create Vulkan Device");
 
         let queue = queues.next().unwrap();
 
         let (swapchain, images) = {
             // Get all the device capabilities and limitations
-            let caps = surface.capabilities(physical)?;
+            let caps = surface.capabilities(physical).expect("Couldn't obtain Vulkan Capabilities from Physical Device");
             let alpha = caps.supported_composite_alpha.iter().next().unwrap();
             let format = caps.supported_formats[0].0;
 
@@ -162,11 +158,11 @@ impl GraphicsHandler {
                 .format(format)
                 .composite_alpha(alpha)
                 .num_images(buffers_count)
-                .build()?
+                .build().expect("Couldn't build Vulkan Swapchain")
         };
 
-        let vs = vs::Shader::load(device.clone())?;
-        let fs = fs::Shader::load(device.clone())?;
+        let vs = vs::Shader::load(device.clone()).expect("Couldn't load Vertex Shader");
+        let fs = fs::Shader::load(device.clone()).expect("Couldn't load Fragment Shader");
 
         let render_pass = Arc::new(vulkano::single_pass_renderpass!(
             device.clone(),
@@ -182,7 +178,7 @@ impl GraphicsHandler {
                 color: [color],
                 depth_stencil: {}
             }
-        )?);
+        ).expect("Couldn't create new Vulkan RenderPass"));
 
         let pipeline = Arc::new(
             GraphicsPipeline::start()
@@ -192,7 +188,7 @@ impl GraphicsHandler {
                 .viewports_dynamic_scissors_irrelevant(1)
                 .fragment_shader(fs.main_entry_point(), ())
                 .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
-                .build(device.clone())?,
+                .build(device.clone()).expect("Couldn't create new Vulkan Graphics Pipeline"),
         );
 
         let mut dynamic_state = DynamicState {
@@ -216,7 +212,7 @@ impl GraphicsHandler {
         };
 
         let previous_frame_end = Some(sync::now(device.clone()).boxed());
-        Ok(Self {
+        Self {
             instance: instance.clone(),
             swapchain,
             render_pass: render_pass.clone(),
@@ -224,10 +220,10 @@ impl GraphicsHandler {
             previous_frame_end,
             device,
             queue,
-        })
+        }
     }
 
-    pub fn vulkan_loop(&mut self, resized: bool, window: &Window) -> Result<(), GraphicsLoopError> {
+    pub fn vulkan_loop(&mut self, resized: bool, window: &Window) {
         {
             // If the window is being resized, return true, otherwise keep the original value (in case of pending resizes)
             let recreate: bool = {
@@ -245,7 +241,7 @@ impl GraphicsHandler {
 
             // Not an actual error, just a way to signify the need to retry the procedure
             if let Err(_) = swapchain.check_and_recreate(window, pass) {
-                return Ok(());
+                return;
             }
         }
         // start of the actual loop code
@@ -255,9 +251,9 @@ impl GraphicsHandler {
                 Ok(r) => r,
                 Err(AcquireError::OutOfDate) => {
                     self.get_swapchain().set_recreate(true);
-                    return Ok(());
+                    return;
                 }
-                Err(e) => Err(e)?,
+                Err(e) => panic!("Couldn't acquire next image from Vulkan Swapchain: {}", e),
             };
         self.get_swapchain().set_recreate(suboptimal);
 
@@ -267,7 +263,7 @@ impl GraphicsHandler {
             self.device.clone(),
             self.queue.family(),
             CommandBufferUsage::OneTimeSubmit,
-        )?;
+        ).expect("Couldn't build Vulkan AutoCommandBuffer");
 
         let vao = VertexArray::from(vec![
             Vertex {
@@ -280,14 +276,14 @@ impl GraphicsHandler {
                 position: [0.25, -0.1],
             },
         ]);
-        let vb = VertexBuffer::new(self.device.clone(), vao)?;
+        let vb = self.new_vertex_buffer(vao).expect("Error on Vertex Buffer Creation: Graphics Device memory allocation error");
 
         builder
             .begin_render_pass(
                 self.get_swapchain().framebuffers[image_num].clone(),
                 SubpassContents::Inline,
                 clear_values,
-            )?
+            ).expect("Couldn't begin Vulkan Render Pass")
             .draw(
                 self.pipeline.clone(),
                 &self.get_swapchain().dynamic_state,
@@ -295,17 +291,17 @@ impl GraphicsHandler {
                 (),
                 (),
                 vec![],
-            )?
-            .end_render_pass()?;
+            ).expect("Couldn't add Draw command to Vulkan Render Pass")
+            .end_render_pass().expect("Couldn't properly end Vulkan Render Pass");
 
-        let command_buffer = builder.build()?;
+        let command_buffer = builder.build().expect("Couldn't build Vulkan Command Buffer");
 
         let future = self
             .previous_frame_end
             .take()
             .unwrap()
             .join(acquire_future)
-            .then_execute(self.queue.clone(), command_buffer)?
+            .then_execute(self.queue.clone(), command_buffer).expect("Couldn't execute Vulkan Command Buffer")
             .then_swapchain_present(
                 self.queue.clone(),
                 self.get_swapchain().chain.clone(),
@@ -321,176 +317,18 @@ impl GraphicsHandler {
                 self.previous_frame_end = Some(sync::now(self.device.clone()).boxed());
             }
             Err(e) => {
-                println!("Failed to flush future: {:?}", e);
+                eprintln!("Failed to flush Vulkan Future: {:?}", e);
                 self.previous_frame_end = Some(sync::now(self.device.clone()).boxed());
             }
         }
-        Ok(())
     }
 
     fn get_swapchain(&mut self) -> &mut SwapchainHandler {
         &mut self.swapchain
     }
-}
 
-/// Unrecoverable error to signify problems during the vulkan init
-#[derive(Debug)]
-pub enum GraphicsHandlerCreationError {
-    ByString(String),
-    OnInstanceCreation(InstanceCreationError),
-    OnDeviceCreation(DeviceCreationError),
-    ForCapabilities(CapabilitiesError),
-    OnSwapchainCreation(SwapchainCreationError),
-    OnPipelineCreation(GraphicsPipelineCreationError),
-    OnRenderPassCreation(RenderPassCreationError),
-    OutOfMemory,
-}
-
-impl From<OomError> for GraphicsHandlerCreationError {
-    fn from(_: OomError) -> Self {
-        Self::OutOfMemory
-    }
-}
-
-impl From<String> for GraphicsHandlerCreationError {
-    fn from(e: String) -> Self {
-        Self::ByString(e)
-    }
-}
-
-impl From<InstanceCreationError> for GraphicsHandlerCreationError {
-    fn from(e: InstanceCreationError) -> Self {
-        Self::OnInstanceCreation(e)
-    }
-}
-
-impl From<DeviceCreationError> for GraphicsHandlerCreationError {
-    fn from(e: DeviceCreationError) -> Self {
-        Self::OnDeviceCreation(e)
-    }
-}
-
-impl From<CapabilitiesError> for GraphicsHandlerCreationError {
-    fn from(e: CapabilitiesError) -> Self {
-        Self::ForCapabilities(e)
-    }
-}
-
-impl From<SwapchainCreationError> for GraphicsHandlerCreationError {
-    fn from(e: SwapchainCreationError) -> Self {
-        Self::OnSwapchainCreation(e)
-    }
-}
-
-impl From<GraphicsPipelineCreationError> for GraphicsHandlerCreationError {
-    fn from(e: GraphicsPipelineCreationError) -> Self {
-        Self::OnPipelineCreation(e)
-    }
-}
-
-impl From<RenderPassCreationError> for GraphicsHandlerCreationError {
-    fn from(e: RenderPassCreationError) -> Self {
-        Self::OnRenderPassCreation(e)
-    }
-}
-
-impl Display for GraphicsHandlerCreationError {
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        let out = match self {
-            Self::ByString(e) => format!("Message: {}", e),
-            Self::OnInstanceCreation(e) => format!("On Instance Creation: {}", e),
-            Self::OnDeviceCreation(e) => format!("On Device Creation: {}", e),
-            Self::ForCapabilities(e) => format!("Capabilities Error: {}", e),
-            Self::OnSwapchainCreation(e) => format!("On Swapchain Creation: {}", e),
-            Self::OnPipelineCreation(e) => format!("On Pipeline Creation: {}", e),
-            Self::OnRenderPassCreation(e) => format!("On Render Pass Creation: {}", e),
-            Self::OutOfMemory => "Out Of Memory".to_string(),
-        };
-
-        write!(f, "Graphics Loop Error: {}", out)
-    }
-}
-
-impl Error for GraphicsHandlerCreationError {}
-
-
-/// Unrecoverable error to signify problems during the vulkan render process and loop
-#[derive(Debug)]
-pub enum GraphicsLoopError {
-    OnAcquire(AcquireError),
-    InAutoCommandBufferBuilderContext(AutoCommandBufferBuilderContextError),
-    OnCommandBufferBuild(BuildError),
-    OnCommandBufferExec(CommandBufferExecError),
-    OnDeviceMemoryAlloc(DeviceMemoryAllocError),
-    OnDraw(DrawError),
-    OnRenderPassBegin(BeginRenderPassError),
-    OutOfMemory,
-}
-
-impl Display for GraphicsLoopError {
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        let out = match self {
-            Self::OnAcquire(e) => format!("On Acquire: {}", e),
-            Self::InAutoCommandBufferBuilderContext(e) => format!("In AutoCommandBufferBuilder Context: {}", e),
-            Self::OnCommandBufferBuild(e) => format!("On CommandBuffer Build: {}", e),
-            Self::OnCommandBufferExec(e) => format!("On CommandBuffer Execution: {}", e),
-            Self::OnDeviceMemoryAlloc(e) => format!("On Device Memory Allocation: {}", e),
-            Self::OnDraw(e) => format!("On Draw: {}", e),
-            Self::OnRenderPassBegin(e) => format!("Render Pass Begin: {}", e),
-            Self::OutOfMemory => "Out Of Memory".to_string(),
-        };
-
-        write!(f, "Graphics Loop Error: {}", out)
-    }
-}
-
-impl Error for GraphicsLoopError {}
-
-impl From<AcquireError> for GraphicsLoopError {
-    fn from(e: AcquireError) -> Self {
-        Self::OnAcquire(e)
-    }
-}
-
-impl From<BuildError> for GraphicsLoopError {
-    fn from(e: BuildError) -> Self {
-        Self::OnCommandBufferBuild(e)
-    }
-}
-
-impl From<CommandBufferExecError> for GraphicsLoopError {
-    fn from(e: CommandBufferExecError) -> Self {
-        Self::OnCommandBufferExec(e)
-    }
-}
-
-impl From<BeginRenderPassError> for GraphicsLoopError {
-    fn from(e: BeginRenderPassError) -> Self {
-        Self::OnRenderPassBegin(e)
-    }
-}
-
-impl From<DrawError> for GraphicsLoopError {
-    fn from(e: DrawError) -> Self {
-        Self::OnDraw(e)
-    }
-}
-
-impl From<AutoCommandBufferBuilderContextError> for GraphicsLoopError {
-    fn from(e: AutoCommandBufferBuilderContextError) -> Self {
-        Self::InAutoCommandBufferBuilderContext(e)
-    }
-}
-
-impl From<DeviceMemoryAllocError> for GraphicsLoopError {
-    fn from(e: DeviceMemoryAllocError) -> Self {
-        Self::OnDeviceMemoryAlloc(e)
-    }
-}
-
-impl From<OomError> for GraphicsLoopError {
-    fn from(_: OomError) -> Self {
-        Self::OutOfMemory
+    fn new_vertex_buffer(&self, vao: VertexArray) -> Result<VertexBuffer, DeviceMemoryAllocError> {
+        VertexBuffer::new(self.device.clone(), vao)
     }
 }
 
@@ -579,17 +417,17 @@ fn window_size_dependent_setup(
         depth_range: 0.0..1.0,
     };
     dynamic_state.viewports = Some(vec![viewport]);
-
+    
     images
         .iter()
         .map(|image| {
-            let view = ImageView::new(image.clone()).unwrap();
+            let view = ImageView::new(image.clone()).expect("Couldn't create Image View on window resize/init");
             Arc::new(
                 Framebuffer::start(render_pass.clone())
                     .add(view)
-                    .unwrap()
+                    .expect("Couldn't add Image View on Framebuffer creation")
                     .build()
-                    .unwrap(),
+                    .expect("Couldn't build Framebuffer on window resize"),
             ) as Arc<dyn FramebufferAbstract + Send + Sync>
         })
         .collect::<Vec<_>>()

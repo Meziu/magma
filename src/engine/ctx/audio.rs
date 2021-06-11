@@ -13,40 +13,55 @@ pub struct AudioHandler {
 }
 
 impl AudioHandler {
-    pub fn new() -> Result<AudioHandler, String> {
+    pub fn new() -> AudioHandler{
         let mut init_flags = mixer::InitFlag::empty();
         init_flags.set(mixer::InitFlag::OGG, true);
 
-        let mix_context = mixer::init(init_flags)?;
+        let mix_context = mixer::init(init_flags).expect("Couldn't init SDL2 Mixer context");
 
         mixer::allocate_channels(5);
 
-        mixer::open_audio(44100, mixer::AUDIO_U16, 2, 1024)?;
+        mixer::open_audio(44100, mixer::AUDIO_U16, 2, 1024).expect("Couldn't open audio on SDL2 Mixer Context");
 
         let general_channel = Channel::all();
 
-        Ok(AudioHandler {
+        AudioHandler {
             mix_context,
             music: None,
             general_channel,
-        })
+        }
     }
 
     //----------------
     // SOUND EFFECTS
     //----------------
-    pub fn sfx_from_file<P: AsRef<Path>>(&mut self, path: P) -> Result<Box<Chunk>, String> {
-        let mut new_chunk = Chunk::from_file(path)?;
-        new_chunk.set_volume(30);
-        let new_chunk = Box::new(new_chunk);
-
-        Ok(new_chunk)
+    pub fn sfx_from_file<P: AsRef<Path>>(&mut self, path: P) -> Option<Box<Chunk>> {
+        match Chunk::from_file(path) {
+            Ok(mut chunk) => {
+                chunk.set_volume(30);
+                Some(Box::new(chunk))
+            },
+            Err(e) => {
+                eprintln!("Couldn't load SFX from file: {}", e); 
+                None
+            },
+        }
     }
 
-    pub fn sfx_play(&self, chunk: &Box<Chunk>) -> Result<(), String> {
-        let _channel = self.general_channel.play(chunk.as_ref(), 0)?;
-
-        Ok(())
+    pub fn sfx_play(&self, chunk: &Option<Box<Chunk>>) -> Option<Channel> {
+        if let Some(chunk_box) = chunk {
+            match self.general_channel.play(chunk_box.as_ref(), 0) {
+                Ok(c) => Some(c),
+                Err(e) => {
+                    eprintln!("Couldn't play SFX: {}", e);
+                    None
+                },
+            }
+        }
+        else {
+            eprintln!("Tried to play non-existing SFX");
+            None
+        }
     }
 
     //--------
