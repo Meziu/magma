@@ -1,5 +1,6 @@
 // standard imports
 use std::cmp::{max, min};
+use std::collections::HashMap;
 use std::ffi::CString;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -7,8 +8,7 @@ use std::sync::Arc;
 // Vulkano imports
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
 use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, CommandBufferUsage, DynamicState,
-    SubpassContents,
+    AutoCommandBufferBuilder, CommandBufferUsage, DynamicState, SubpassContents,
 };
 use vulkano::descriptor::PipelineLayoutAbstract;
 use vulkano::device::{Device, DeviceExtensions, Queue};
@@ -18,7 +18,7 @@ use vulkano::instance::{Instance, PhysicalDevice, RawInstanceExtensions};
 use vulkano::memory::DeviceMemoryAllocError;
 use vulkano::pipeline::vertex::SingleBufferDefinition;
 use vulkano::pipeline::viewport::Viewport;
-use vulkano::pipeline::{GraphicsPipeline};
+use vulkano::pipeline::GraphicsPipeline;
 use vulkano::render_pass::RenderPass;
 use vulkano::render_pass::{Framebuffer, FramebufferAbstract, Subpass};
 use vulkano::swapchain;
@@ -38,10 +38,13 @@ pub struct GraphicsHandler {
     instance: Arc<Instance>,
     swapchain: SwapchainHandler,
     render_pass: Arc<RenderPass>,
-    pipeline: Arc<
-        GraphicsPipeline<
-            SingleBufferDefinition<Vertex>,
-            Box<dyn PipelineLayoutAbstract + Send + Sync>,
+    pipelines: HashMap<
+        String,
+        Arc<
+            GraphicsPipeline<
+                SingleBufferDefinition<Vertex>,
+                Box<dyn PipelineLayoutAbstract + Send + Sync>,
+            >,
         >,
     >,
     previous_frame_end: Option<Box<dyn GpuFuture>>,
@@ -49,174 +52,52 @@ pub struct GraphicsHandler {
     queue: Arc<Queue>,
 }
 
-/// Type to hold swapchain and corresponding images
-struct SwapchainHandler {
-    chain: Arc<Swapchain<Sendable<Rc<WindowContext>>>>,
-    images: Vec<Arc<SwapchainImage<Sendable<Rc<WindowContext>>>>>,
-    framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
-    must_recreate: bool,
-    dynamic_state: DynamicState,
-}
-
-impl SwapchainHandler {
-    pub fn check_and_recreate(&mut self, window: &Window, pass: Arc<RenderPass>) -> Result<(), ()> {
-        if self.must_recreate {
-            let dimensions: [u32; 2] = {
-                let size = window.size();
-                [size.0, size.1]
-            };
-
-            let (new_swapchain, new_images) =
-                match self.chain.recreate().dimensions(dimensions).build() {
-                    Ok(r) => r,
-                    Err(SwapchainCreationError::UnsupportedDimensions) => return Err(()),
-                    Err(e) => panic!("Failed to recreate swapchain: {:?}", e),
-                };
-
-            self.chain = new_swapchain;
-            self.images = new_images;
-
-            let framebuffers = window_size_dependent_setup(
-                &self.images[..],
-                pass.clone(),
-                &mut self.dynamic_state,
-            );
-            self.framebuffers = framebuffers;
-            self.must_recreate = false;
-        }
-        Ok(())
-    }
-
-    pub fn get_recreate(&self) -> bool {
-        self.must_recreate
-    }
-
-    pub fn set_recreate(&mut self, new_value: bool) {
-        self.must_recreate = new_value;
-    }
-}
-
 impl GraphicsHandler {
+    /// Vulkan object handler instancing and init
     pub fn new(window: &Window) -> Self {
-        // Vulkan instancing and init
-        let instance_extensions = window.vulkan_instance_extensions().expect("Couldn't obtain Vulkan Instance Extensions from the Window");
-        let raw_instance_extensions = RawInstanceExtensions::new(
-            instance_extensions
-                .iter()
-                .map(|&v| CString::new(v).unwrap()),
-        );
+        let instance = create_instance(window);
 
-        let instance = Instance::new(None, raw_instance_extensions, None).expect("Couldn't create a new Vulkan instance");
-
-        let surface_handle = window.vulkan_create_surface(instance.internal_object()).expect("Couldn't create a new surface from the Vulkan Instance");
-        // Use the SDL2 surface from the Window as surface
-        let surface = unsafe {
-            Arc::new(Surface::from_raw_surface(
-                instance.clone(),
-                surface_handle,
-                Sendable::new(window.context()),
-            ))
-        };
+        let surface = create_surface(instance.clone(), window);
 
         // Get the device info and queue
-        let physical = PhysicalDevice::enumerate(&instance).next().unwrap();
-        let queue_family = physical
-            .queue_families()
-            .find(|&q| q.supports_graphics() && surface.is_supported(q).unwrap_or(false))
-            .unwrap();
+        let (physical, device, queue) = get_device(&instance, surface.clone());
 
-        let device_ext = DeviceExtensions {
-            khr_swapchain: true,
-            ..DeviceExtensions::none()
-        };
-        let (device, mut queues) = Device::new(
-            physical,
-            physical.supported_features(),
-            &device_ext,
-            [(queue_family, 0.5)].iter().cloned(),
-        ).expect("Couldn't create Vulkan Device");
-
-        let queue = queues.next().unwrap();
-
-        let (swapchain, images) = {
-            // Get all the device capabilities and limitations
-            let caps = surface.capabilities(physical).expect("Couldn't obtain Vulkan Capabilities from Physical Device");
-            let alpha = caps.supported_composite_alpha.iter().next().unwrap();
-            let format = caps.supported_formats[0].0;
-
-            let buffers_count = match caps.max_image_count {
-                None => max(2, caps.min_image_count),
-                Some(limit) => min(max(2, caps.min_image_count), limit),
-            };
-            let dimensions: [u32; 2] = {
-                let size = window.size();
-                [size.0, size.1]
-            };
-            Swapchain::start(device.clone(), surface.clone())
-                .dimensions(dimensions)
-                .usage(ImageUsage::color_attachment())
-                .format(format)
-                .composite_alpha(alpha)
-                .num_images(buffers_count)
-                .build().expect("Couldn't build Vulkan Swapchain")
-        };
+        let (swapchain, images) =
+            create_raw_swapchain(window, device.clone(), surface.clone(), physical);
 
         let vs = vs::Shader::load(device.clone()).expect("Couldn't load Vertex Shader");
         let fs = fs::Shader::load(device.clone()).expect("Couldn't load Fragment Shader");
 
-        let render_pass = Arc::new(vulkano::single_pass_renderpass!(
-            device.clone(),
-            attachments: {
-                color: {
-                    load: Clear,
-                    store: Store,
-                    format: swapchain.format(),
-                    samples: 1,
+        let render_pass = Arc::new(
+            vulkano::single_pass_renderpass!(
+                device.clone(),
+                attachments: {
+                    color: {
+                        load: Clear,
+                        store: Store,
+                        format: swapchain.format(),
+                        samples: 1,
+                    }
+                },
+                pass: {
+                    color: [color],
+                    depth_stencil: {}
                 }
-            },
-            pass: {
-                color: [color],
-                depth_stencil: {}
-            }
-        ).expect("Couldn't create new Vulkan RenderPass"));
-
-        let pipeline = Arc::new(
-            GraphicsPipeline::start()
-                .vertex_input_single_buffer()
-                .vertex_shader(vs.main_entry_point(), ())
-                .triangle_list()
-                .viewports_dynamic_scissors_irrelevant(1)
-                .fragment_shader(fs.main_entry_point(), ())
-                .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
-                .build(device.clone()).expect("Couldn't create new Vulkan Graphics Pipeline"),
+            )
+            .expect("Couldn't create new Vulkan RenderPass"),
         );
 
-        let mut dynamic_state = DynamicState {
-            line_width: None,
-            viewports: None,
-            scissors: None,
-            compare_mask: None,
-            write_mask: None,
-            reference: None,
-        };
-
-        let framebuffers =
-            window_size_dependent_setup(&images[..], render_pass.clone(), &mut dynamic_state);
-
-        let swapchain = SwapchainHandler {
-            chain: swapchain,
-            images: images,
-            framebuffers,
-            must_recreate: false,
-            dynamic_state,
-        };
+        let mut pipelines = HashMap::new();
+        Self::_create_pipeline("SimpleTriangle", device.clone(), render_pass.clone(), vs, fs, &mut pipelines);
+        
+        let swapchain = SwapchainHandler::new(swapchain.clone(), images, render_pass.clone());
 
         let previous_frame_end = Some(sync::now(device.clone()).boxed());
         Self {
             instance: instance.clone(),
             swapchain,
             render_pass: render_pass.clone(),
-            pipeline: pipeline.clone(),
+            pipelines,
             previous_frame_end,
             device,
             queue,
@@ -263,7 +144,8 @@ impl GraphicsHandler {
             self.device.clone(),
             self.queue.family(),
             CommandBufferUsage::OneTimeSubmit,
-        ).expect("Couldn't build Vulkan AutoCommandBuffer");
+        )
+        .expect("Couldn't build Vulkan AutoCommandBuffer");
 
         let vao = VertexArray::from(vec![
             Vertex {
@@ -276,32 +158,38 @@ impl GraphicsHandler {
                 position: [0.25, -0.1],
             },
         ]);
-        let vb = self.new_vertex_buffer(vao).expect("Error on Vertex Buffer Creation: Graphics Device memory allocation error");
+        let vb = self.new_vertex_buffer(vao);
 
         builder
             .begin_render_pass(
                 self.get_swapchain().framebuffers[image_num].clone(),
                 SubpassContents::Inline,
                 clear_values,
-            ).expect("Couldn't begin Vulkan Render Pass")
+            )
+            .expect("Couldn't begin Vulkan Render Pass")
             .draw(
-                self.pipeline.clone(),
+                self.pipelines.get(&"SimpleTriangle".to_string()).expect("No Vulkan Pipeline under this name was found").clone(),
                 &self.get_swapchain().dynamic_state,
                 vb.buffer.clone(),
                 (),
                 (),
                 vec![],
-            ).expect("Couldn't add Draw command to Vulkan Render Pass")
-            .end_render_pass().expect("Couldn't properly end Vulkan Render Pass");
+            )
+            .expect("Couldn't add Draw command to Vulkan Render Pass")
+            .end_render_pass()
+            .expect("Couldn't properly end Vulkan Render Pass");
 
-        let command_buffer = builder.build().expect("Couldn't build Vulkan Command Buffer");
+        let command_buffer = builder
+            .build()
+            .expect("Couldn't build Vulkan Command Buffer");
 
         let future = self
             .previous_frame_end
             .take()
             .unwrap()
             .join(acquire_future)
-            .then_execute(self.queue.clone(), command_buffer).expect("Couldn't execute Vulkan Command Buffer")
+            .then_execute(self.queue.clone(), command_buffer)
+            .expect("Couldn't execute Vulkan Command Buffer")
             .then_swapchain_present(
                 self.queue.clone(),
                 self.get_swapchain().chain.clone(),
@@ -327,11 +215,119 @@ impl GraphicsHandler {
         &mut self.swapchain
     }
 
-    fn new_vertex_buffer(&self, vao: VertexArray) -> Result<VertexBuffer, DeviceMemoryAllocError> {
+    fn new_vertex_buffer(&self, vao: VertexArray) -> VertexBuffer {
         VertexBuffer::new(self.device.clone(), vao)
+            .expect("Device Memory Allocation Error during creation of new Vertex Buffer")
+    }
+
+    fn create_pipeline(&mut self, name: &str, vs: vs::Shader, fs: fs::Shader) {
+        Self::_create_pipeline(name, self.device.clone(), self.render_pass.clone(), vs, fs, &mut self.pipelines);
+    }
+
+    fn _create_pipeline(
+        name: &str,
+        device: Arc<Device>,
+        render_pass: Arc<RenderPass>,
+        vs: vs::Shader,
+        fs: fs::Shader,
+        map: &mut HashMap<
+            String,
+            Arc<
+                GraphicsPipeline<
+                    SingleBufferDefinition<Vertex>,
+                    Box<dyn PipelineLayoutAbstract + Send + Sync>,
+                >,
+            >,
+        >,
+    ) {
+        let pipeline = Arc::new(
+            GraphicsPipeline::start()
+                .vertex_input_single_buffer::<Vertex>()
+                .vertex_shader(vs.main_entry_point(), ())
+                .triangle_list()
+                .viewports_dynamic_scissors_irrelevant(1)
+                .fragment_shader(fs.main_entry_point(), ())
+                .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
+                .build(device.clone())
+                .expect("Couldn't create new Vulkan Graphics Pipeline"),
+        );
+    
+        map.insert(name.to_string(), pipeline.clone());
     }
 }
 
+/// Type to hold swapchain and corresponding images
+struct SwapchainHandler {
+    chain: Arc<Swapchain<Sendable<Rc<WindowContext>>>>,
+    images: Vec<Arc<SwapchainImage<Sendable<Rc<WindowContext>>>>>,
+    framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
+    must_recreate: bool,
+    dynamic_state: DynamicState,
+}
+
+impl SwapchainHandler {
+    fn new(
+        swapchain: Arc<Swapchain<Sendable<Rc<WindowContext>>>>,
+        images: Vec<Arc<SwapchainImage<Sendable<Rc<WindowContext>>>>>,
+        render_pass: Arc<RenderPass>,
+    ) -> Self {
+        let mut dynamic_state = DynamicState {
+            line_width: None,
+            viewports: None,
+            scissors: None,
+            compare_mask: None,
+            write_mask: None,
+            reference: None,
+        };
+
+        let framebuffers =
+            window_size_dependent_setup(&images[..], render_pass.clone(), &mut dynamic_state);
+
+        Self {
+            chain: swapchain,
+            images: images,
+            framebuffers,
+            must_recreate: false,
+            dynamic_state,
+        }
+    }
+
+    fn check_and_recreate(&mut self, window: &Window, pass: Arc<RenderPass>) -> Result<(), ()> {
+        if self.must_recreate {
+            let dimensions: [u32; 2] = {
+                let size = window.size();
+                [size.0, size.1]
+            };
+
+            let (new_swapchain, new_images) =
+                match self.chain.recreate().dimensions(dimensions).build() {
+                    Ok(r) => r,
+                    Err(SwapchainCreationError::UnsupportedDimensions) => return Err(()),
+                    Err(e) => panic!("Failed to recreate swapchain: {:?}", e),
+                };
+
+            self.chain = new_swapchain;
+            self.images = new_images;
+
+            let framebuffers = window_size_dependent_setup(
+                &self.images[..],
+                pass.clone(),
+                &mut self.dynamic_state,
+            );
+            self.framebuffers = framebuffers;
+            self.must_recreate = false;
+        }
+        Ok(())
+    }
+
+    fn get_recreate(&self) -> bool {
+        self.must_recreate
+    }
+
+    fn set_recreate(&mut self, new_value: bool) {
+        self.must_recreate = new_value;
+    }
+}
 
 /// Struct to hold vertex data
 #[derive(Default, Copy, Clone)]
@@ -340,7 +336,7 @@ struct Vertex {
 }
 vulkano::impl_vertex!(Vertex, position);
 
-/// Simple struct to hold an array of objects
+/// Simple struct to hold an array of vertices
 struct VertexArray {
     data: Vec<Vertex>,
 }
@@ -357,10 +353,7 @@ struct VertexBuffer {
 }
 
 impl VertexBuffer {
-    pub fn new(
-        device: Arc<Device>,
-        array: VertexArray,
-    ) -> Result<Self, DeviceMemoryAllocError> {
+    pub fn new(device: Arc<Device>, array: VertexArray) -> Result<Self, DeviceMemoryAllocError> {
         let buffer = CpuAccessibleBuffer::from_iter(
             device,
             BufferUsage::all(),
@@ -417,11 +410,11 @@ fn window_size_dependent_setup(
         depth_range: 0.0..1.0,
     };
     dynamic_state.viewports = Some(vec![viewport]);
-    
     images
         .iter()
         .map(|image| {
-            let view = ImageView::new(image.clone()).expect("Couldn't create Image View on window resize/init");
+            let view = ImageView::new(image.clone())
+                .expect("Couldn't create Image View on window resize/init");
             Arc::new(
                 Framebuffer::start(render_pass.clone())
                     .add(view)
@@ -431,4 +424,98 @@ fn window_size_dependent_setup(
             ) as Arc<dyn FramebufferAbstract + Send + Sync>
         })
         .collect::<Vec<_>>()
+}
+
+fn create_instance(window: &Window) -> Arc<Instance> {
+    let instance_extensions = window
+        .vulkan_instance_extensions()
+        .expect("Couldn't obtain Vulkan Instance Extensions from the Window");
+    let raw_instance_extensions = RawInstanceExtensions::new(
+        instance_extensions
+            .iter()
+            .map(|&v| CString::new(v).unwrap()),
+    );
+
+    Instance::new(None, raw_instance_extensions, None)
+        .expect("Couldn't create a new Vulkan instance")
+}
+
+fn create_surface(
+    instance: Arc<Instance>,
+    window: &Window,
+) -> Arc<Surface<Sendable<Rc<WindowContext>>>> {
+    let surface_handle = window
+        .vulkan_create_surface(instance.internal_object())
+        .expect("Couldn't create a new surface from the Vulkan Instance");
+    // Use the SDL2 surface from the Window as surface
+    unsafe {
+        Arc::new(Surface::from_raw_surface(
+            instance.clone(),
+            surface_handle,
+            Sendable::new(window.context()),
+        ))
+    }
+}
+
+fn get_device<'inst>(
+    instance: &'inst Arc<Instance>,
+    surface: Arc<Surface<Sendable<Rc<WindowContext>>>>,
+) -> (PhysicalDevice<'inst>, Arc<Device>, Arc<Queue>) {
+    let physical = PhysicalDevice::enumerate(&instance).next().unwrap();
+    let queue_family = physical
+        .queue_families()
+        .find(|&q| q.supports_graphics() && surface.is_supported(q).unwrap_or(false))
+        .expect("Couldn't generate queue family during Physical Device instancing");
+
+    let device_ext = DeviceExtensions {
+        khr_swapchain: true,
+        ..DeviceExtensions::none()
+    };
+    let (device, mut queues) = Device::new(
+        physical,
+        physical.supported_features(),
+        &device_ext,
+        [(queue_family, 0.5)].iter().cloned(),
+    )
+    .expect("Couldn't create Vulkan Device");
+
+    (
+        physical,
+        device,
+        queues.next().expect("Couldn't get first queue object"),
+    )
+}
+
+fn create_raw_swapchain(
+    window: &Window,
+    device: Arc<Device>,
+    surface: Arc<Surface<Sendable<Rc<WindowContext>>>>,
+    physical: PhysicalDevice,
+) -> (
+    Arc<Swapchain<Sendable<Rc<WindowContext>>>>,
+    Vec<Arc<SwapchainImage<Sendable<Rc<WindowContext>>>>>,
+) {
+    // Get all the device capabilities and limitations
+    let caps = surface
+        .capabilities(physical)
+        .expect("Couldn't obtain Vulkan Capabilities from Physical Device");
+    let alpha = caps.supported_composite_alpha.iter().next().unwrap();
+    let format = caps.supported_formats[0].0;
+
+    let buffers_count = match caps.max_image_count {
+        None => max(2, caps.min_image_count),
+        Some(limit) => min(max(2, caps.min_image_count), limit),
+    };
+    let dimensions: [u32; 2] = {
+        let size = window.size();
+        [size.0, size.1]
+    };
+    Swapchain::start(device.clone(), surface.clone())
+        .dimensions(dimensions)
+        .usage(ImageUsage::color_attachment())
+        .format(format)
+        .composite_alpha(alpha)
+        .num_images(buffers_count)
+        .build()
+        .expect("Couldn't build Vulkan Swapchain")
 }

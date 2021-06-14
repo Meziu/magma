@@ -49,8 +49,8 @@ impl AudioHandler {
         SoundEffect {data: new_chunk, volume: 30,}
     }
 
-    pub fn sfx_play(&self, chunk: &SoundEffect) -> Option<Channel> {
-        if let Some(chunk_box) = &chunk.data {
+    pub fn sfx_play(&self, sfx: &SoundEffect) -> Option<Channel> {
+        if let Some(chunk_box) = &sfx.data {
             match self.general_channel.play(chunk_box.as_ref(), 0) {
                 Ok(c) => {
                     c.set_volume(30);
