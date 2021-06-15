@@ -136,6 +136,7 @@ impl GraphicsHandler {
             "assets/shaders/triangle.frag",
             &mut pipelines
         );
+
         let swapchain = SwapchainHandler::new(swapchain.clone(), images, render_pass.clone());
 
         let previous_frame_end = Some(sync::now(device.clone()).boxed());
@@ -195,13 +196,16 @@ impl GraphicsHandler {
 
         let vao = VertexArray::from(vec![
             Vertex {
-                position: [-0.5, -0.25],
+                position: [-0.5, 0.5],
+                color: [1.0, 0.0, 0.0],
             },
             Vertex {
-                position: [0.0, 0.5],
+                position: [0.5, 0.5],
+                color: [0.0, 1.0, 0.0],
             },
             Vertex {
-                position: [0.25, -0.1],
+                position: [0.0, -0.5],
+                color: [0.0, 0.0, 1.0],
             },
         ]);
         let vb = self.new_vertex_buffer(vao);
@@ -347,8 +351,9 @@ impl SwapchainHandler {
 #[derive(Default, Copy, Clone)]
 struct Vertex {
     position: [f32; 2],
+    color: [f32; 3],
 }
-vulkano::impl_vertex!(Vertex, position);
+vulkano::impl_vertex!(Vertex, position, color);
 
 /// Simple struct to hold an array of vertices
 struct VertexArray {
