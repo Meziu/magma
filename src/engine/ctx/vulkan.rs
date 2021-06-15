@@ -34,9 +34,11 @@ use sdl2::video::{Window, WindowContext};
 use super::sendable::Sendable;
 
 
+/// Use of a macro due to literals needed. 
+/// This creates a new pipeline object (using the specified shaders) and appends it to the HashMap.
 #[macro_use]
 macro_rules! create_pipeline {
-    ($name: expr, $device: expr, $render_pass: expr, $vs_path: expr, $fs_path: expr, $map: expr) => {
+    ($name: expr, $device: expr, $render_pass: expr, $vs_path: expr, $fs_path: expr, $map: expr) => { {
         mod vertex_shader {
             vulkano_shaders::shader!{
                ty: "vertex",
@@ -69,7 +71,8 @@ macro_rules! create_pipeline {
         );
     
         $map.insert($name.to_string(), pipeline.clone());
-    };
+    }; 
+    }
 }
 
 /// Struct to handle connections to the Vulkano (and thus Vulkan) API
