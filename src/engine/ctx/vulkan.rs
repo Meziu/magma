@@ -65,8 +65,9 @@ macro_rules! create_pipeline {
             GraphicsPipeline::start()
                 .vertex_input_single_buffer::<Vertex>()
                 .vertex_shader(vert_shader.main_entry_point(), ())
-                .triangle_list()
+                .triangle_strip()
                 .viewports_dynamic_scissors_irrelevant(1)
+                .blend_alpha_blending()
                 .fragment_shader(frag_shader.main_entry_point(), ())
                 .render_pass(Subpass::from($render_pass.clone(), 0).unwrap())
                 .build($device.clone())
@@ -196,16 +197,20 @@ impl GraphicsHandler {
 
         let vao = VertexArray::from(vec![
             Vertex {
-                position: [-0.5, 0.5],
+                position: [-0.5, -0.5],
                 color: [1.0, 0.0, 0.0],
             },
             Vertex {
-                position: [0.5, 0.5],
+                position: [-0.5, 0.5],
                 color: [0.0, 1.0, 0.0],
             },
             Vertex {
-                position: [0.0, -0.5],
+                position: [0.5, -0.5],
                 color: [0.0, 0.0, 1.0],
+            },
+            Vertex {
+                position: [0.5, 0.5],
+                color: [0.0, 0.0, 0.0],
             },
         ]);
         let vb = self.new_vertex_buffer(vao);
