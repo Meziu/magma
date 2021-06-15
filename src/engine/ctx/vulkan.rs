@@ -33,30 +33,33 @@ use sdl2::video::{Window, WindowContext};
 // other imports
 use super::sendable::Sendable;
 
-
-/// Use of a macro due to literals needed. 
+/// Use of a macro due to literals needed.
 /// This creates a new pipeline object (using the specified shaders) and appends it to the HashMap.
 #[macro_use]
 macro_rules! create_pipeline {
-    ($name: expr, $device: expr, $render_pass: expr, $vs_path: expr, $fs_path: expr, $map: expr) => { {
+    ($name: expr, $device: expr, $render_pass: expr, $vs_path: expr, $fs_path: expr, $map: expr) => {{
         mod vertex_shader {
-            vulkano_shaders::shader!{
+            vulkano_shaders::shader! {
                ty: "vertex",
                path: $vs_path
             }
         }
 
         mod fragment_shader {
-            vulkano_shaders::shader!{
+            vulkano_shaders::shader! {
                 ty: "fragment",
                 path: $fs_path
             }
         }
 
-        let vert_shader = vertex_shader::Shader::load($device.clone())
-            .expect(&format!("Couldn't load Vertex Shader: pipeline name: {},\nshader path: {}", $name, $vs_path));
-        let frag_shader = fragment_shader::Shader::load($device.clone())
-            .expect(&format!("Couldn't load Fragment Shader: pipeline name: {},\nshader path: {}", $name, $fs_path));
+        let vert_shader = vertex_shader::Shader::load($device.clone()).expect(&format!(
+            "Couldn't load Vertex Shader: pipeline name: {},\nshader path: {}",
+            $name, $vs_path
+        ));
+        let frag_shader = fragment_shader::Shader::load($device.clone()).expect(&format!(
+            "Couldn't load Fragment Shader: pipeline name: {},\nshader path: {}",
+            $name, $fs_path
+        ));
 
         let pipeline = Arc::new(
             GraphicsPipeline::start()
@@ -69,10 +72,8 @@ macro_rules! create_pipeline {
                 .build($device.clone())
                 .expect("Couldn't create new Vulkan Graphics Pipeline"),
         );
-    
         $map.insert($name.to_string(), pipeline.clone());
-    }; 
-    }
+    };};
 }
 
 /// Struct to handle connections to the Vulkano (and thus Vulkan) API
@@ -127,8 +128,14 @@ impl GraphicsHandler {
         );
 
         let mut pipelines = HashMap::new();
-        create_pipeline!("SimpleTriangle", device.clone(), render_pass.clone(), "assets/shaders/triangle.vert", "assets/shaders/triangle.frag", &mut pipelines);
-        
+        create_pipeline!(
+            "SimpleTriangle",
+            device.clone(),
+            render_pass.clone(),
+            "assets/shaders/triangle.vert",
+            "assets/shaders/triangle.frag",
+            &mut pipelines
+        );
         let swapchain = SwapchainHandler::new(swapchain.clone(), images, render_pass.clone());
 
         let previous_frame_end = Some(sync::now(device.clone()).boxed());
@@ -207,7 +214,10 @@ impl GraphicsHandler {
             )
             .expect("Couldn't begin Vulkan Render Pass")
             .draw(
-                self.pipelines.get(&"SimpleTriangle".to_string()).expect("No Vulkan Pipeline under this name was found").clone(),
+                self.pipelines
+                    .get(&"SimpleTriangle".to_string())
+                    .expect("No Vulkan Pipeline under this name was found")
+                    .clone(),
                 &self.get_swapchain().dynamic_state,
                 vb.buffer.clone(),
                 (),
@@ -259,7 +269,6 @@ impl GraphicsHandler {
             .expect("Device Memory Allocation Error during creation of new Vertex Buffer")
     }
 }
-
 
 /// Type to hold swapchain and corresponding images
 struct SwapchainHandler {
@@ -369,7 +378,6 @@ impl VertexBuffer {
         Ok(Self { buffer })
     }
 }
-
 
 /// Called during init and at every resize of the window
 /// There is no error handling, if something goes wrong here, panic is the best solution
