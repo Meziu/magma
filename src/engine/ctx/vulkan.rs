@@ -33,6 +33,45 @@ use sdl2::video::{Window, WindowContext};
 // other imports
 use super::sendable::Sendable;
 
+
+#[macro_use]
+macro_rules! create_pipeline {
+    ($name: expr, $device: expr, $render_pass: expr, $vs_path: expr, $fs_path: expr, $map: expr) => {
+        mod vertex_shader {
+            vulkano_shaders::shader!{
+               ty: "vertex",
+               path: $vs_path
+            }
+        }
+
+        mod fragment_shader {
+            vulkano_shaders::shader!{
+                ty: "fragment",
+                path: $fs_path
+            }
+        }
+
+        let vert_shader = vertex_shader::Shader::load($device.clone())
+            .expect(&format!("Couldn't load Vertex Shader: pipeline name: {},\nshader path: {}", $name, $vs_path));
+        let frag_shader = fragment_shader::Shader::load($device.clone())
+            .expect(&format!("Couldn't load Fragment Shader: pipeline name: {},\nshader path: {}", $name, $fs_path));
+
+        let pipeline = Arc::new(
+            GraphicsPipeline::start()
+                .vertex_input_single_buffer::<Vertex>()
+                .vertex_shader(vert_shader.main_entry_point(), ())
+                .triangle_list()
+                .viewports_dynamic_scissors_irrelevant(1)
+                .fragment_shader(frag_shader.main_entry_point(), ())
+                .render_pass(Subpass::from($render_pass.clone(), 0).unwrap())
+                .build($device.clone())
+                .expect("Couldn't create new Vulkan Graphics Pipeline"),
+        );
+    
+        $map.insert($name.to_string(), pipeline.clone());
+    };
+}
+
 /// Struct to handle connections to the Vulkano (and thus Vulkan) API
 pub struct GraphicsHandler {
     instance: Arc<Instance>,
@@ -65,9 +104,6 @@ impl GraphicsHandler {
         let (swapchain, images) =
             create_raw_swapchain(window, device.clone(), surface.clone(), physical);
 
-        let vs = vs::Shader::load(device.clone()).expect("Couldn't load Vertex Shader");
-        let fs = fs::Shader::load(device.clone()).expect("Couldn't load Fragment Shader");
-
         let render_pass = Arc::new(
             vulkano::single_pass_renderpass!(
                 device.clone(),
@@ -88,7 +124,7 @@ impl GraphicsHandler {
         );
 
         let mut pipelines = HashMap::new();
-        Self::_create_pipeline("SimpleTriangle", device.clone(), render_pass.clone(), vs, fs, &mut pipelines);
+        create_pipeline!("SimpleTriangle", device.clone(), render_pass.clone(), "assets/shaders/triangle.vert", "assets/shaders/triangle.frag", &mut pipelines);
         
         let swapchain = SwapchainHandler::new(swapchain.clone(), images, render_pass.clone());
 
@@ -219,42 +255,8 @@ impl GraphicsHandler {
         VertexBuffer::new(self.device.clone(), vao)
             .expect("Device Memory Allocation Error during creation of new Vertex Buffer")
     }
-
-    fn create_pipeline(&mut self, name: &str, vs: vs::Shader, fs: fs::Shader) {
-        Self::_create_pipeline(name, self.device.clone(), self.render_pass.clone(), vs, fs, &mut self.pipelines);
-    }
-
-    fn _create_pipeline(
-        name: &str,
-        device: Arc<Device>,
-        render_pass: Arc<RenderPass>,
-        vs: vs::Shader,
-        fs: fs::Shader,
-        map: &mut HashMap<
-            String,
-            Arc<
-                GraphicsPipeline<
-                    SingleBufferDefinition<Vertex>,
-                    Box<dyn PipelineLayoutAbstract + Send + Sync>,
-                >,
-            >,
-        >,
-    ) {
-        let pipeline = Arc::new(
-            GraphicsPipeline::start()
-                .vertex_input_single_buffer::<Vertex>()
-                .vertex_shader(vs.main_entry_point(), ())
-                .triangle_list()
-                .viewports_dynamic_scissors_irrelevant(1)
-                .fragment_shader(fs.main_entry_point(), ())
-                .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
-                .build(device.clone())
-                .expect("Couldn't create new Vulkan Graphics Pipeline"),
-        );
-    
-        map.insert(name.to_string(), pipeline.clone());
-    }
 }
+
 
 /// Type to hold swapchain and corresponding images
 struct SwapchainHandler {
@@ -365,35 +367,6 @@ impl VertexBuffer {
     }
 }
 
-mod vs {
-    vulkano_shaders::shader! {
-        ty: "vertex",
-        src: "
-            #version 450
-
-            layout(location = 0) in vec2 position;
-
-            void main() {
-                gl_Position = vec4(position, 0.0, 1.0);
-            }
-        "
-    }
-}
-
-mod fs {
-    vulkano_shaders::shader! {
-        ty: "fragment",
-        src: "
-            #version 450
-
-            layout(location = 0) out vec4 f_color;
-
-            void main() {
-                f_color = vec4(1.0, 0.0, 0.0, 1.0);
-            }
-        "
-    }
-}
 
 /// Called during init and at every resize of the window
 /// There is no error handling, if something goes wrong here, panic is the best solution
