@@ -30,6 +30,9 @@ impl Engine {
                 Err(_) => println!("Music couldn't play..."),
             }
         }
+        else {
+            println!("Music couldn't be loaded...");
+        }
 
         'mainloop: loop {
             self.ctx_handler.check_events();
