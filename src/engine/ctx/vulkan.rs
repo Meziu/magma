@@ -6,9 +6,12 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 // Vulkano imports
-use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer};
+use vulkano::buffer::{
+    immutable::ImmutableBuffer, BufferUsage, CpuAccessibleBuffer, TypedBufferAccess,
+};
 use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, CommandBufferUsage, DynamicState, SubpassContents,
+    AutoCommandBufferBuilder, CommandBufferUsage, DynamicState, PrimaryAutoCommandBuffer,
+    SubpassContents,
 };
 use vulkano::descriptor::PipelineLayoutAbstract;
 use vulkano::device::{Device, DeviceExtensions, Queue};
@@ -186,10 +189,8 @@ impl GraphicsHandler {
             };
         self.get_swapchain().set_recreate(suboptimal);
 
-        let clear_values = vec![[0.0, 0.0, 1.0, 1.0].into()];
-
         let mut builder = AutoCommandBufferBuilder::primary(
-            self.device.clone(),
+            self.get_device(),
             self.queue.family(),
             CommandBufferUsage::OneTimeSubmit,
         )
@@ -197,12 +198,12 @@ impl GraphicsHandler {
 
         let vao = VertexArray::from(vec![
             Vertex {
-                position: [-0.5, -0.5],
+                position: [-0.5, 0.5],
                 color: [1.0, 0.0, 0.0],
             },
             Vertex {
-                position: [-0.5, 0.5],
-                color: [0.0, 1.0, 0.0],
+                position: [-0.5, -0.5],
+                color: [0.0, 0.0, 0.0],
             },
             Vertex {
                 position: [0.5, -0.5],
@@ -213,27 +214,21 @@ impl GraphicsHandler {
                 color: [0.0, 0.0, 0.0],
             },
         ]);
-        let vb = self.new_vertex_buffer(vao);
+        let shape = PrimitiveShape {
+            vertex_buffer: self.new_vertex_buffer(vao),
+        };
 
         builder
             .begin_render_pass(
                 self.get_swapchain().framebuffers[image_num].clone(),
                 SubpassContents::Inline,
-                clear_values,
+                vec![[0.0, 0.0, 0.0, 1.0].into()],
             )
-            .expect("Couldn't begin Vulkan Render Pass")
-            .draw(
-                self.pipelines
-                    .get(&"SimpleTriangle".to_string())
-                    .expect("No Vulkan Pipeline under this name was found")
-                    .clone(),
-                &self.get_swapchain().dynamic_state,
-                vb.buffer.clone(),
-                (),
-                (),
-                vec![],
-            )
-            .expect("Couldn't add Draw command to Vulkan Render Pass")
+            .expect("Couldn't begin Vulkan Render Pass");
+        
+        shape.draw(self, &mut builder);
+
+        builder
             .end_render_pass()
             .expect("Couldn't properly end Vulkan Render Pass");
 
@@ -260,11 +255,11 @@ impl GraphicsHandler {
             }
             Err(FlushError::OutOfDate) => {
                 self.get_swapchain().set_recreate(true);
-                self.previous_frame_end = Some(sync::now(self.device.clone()).boxed());
+                self.previous_frame_end = Some(sync::now(self.get_device()).boxed());
             }
             Err(e) => {
                 eprintln!("Failed to flush Vulkan Future: {:?}", e);
-                self.previous_frame_end = Some(sync::now(self.device.clone()).boxed());
+                self.previous_frame_end = Some(sync::now(self.get_device()).boxed());
             }
         }
     }
@@ -273,9 +268,42 @@ impl GraphicsHandler {
         &mut self.swapchain
     }
 
+    fn get_device(&self) -> Arc<Device> {
+        self.device.clone()
+    }
+
+    fn get_pipeline(
+        &self,
+        name: &str,
+    ) -> Arc<
+        GraphicsPipeline<
+            SingleBufferDefinition<Vertex>,
+            Box<dyn PipelineLayoutAbstract + Send + Sync>,
+        >,
+    > {
+        self.pipelines
+            .get(name)
+            .expect("No Vulkan Pipeline under this name was found")
+            .clone()
+    }
+
     fn new_vertex_buffer(&self, vao: VertexArray) -> VertexBuffer {
-        VertexBuffer::new(self.device.clone(), vao)
+        VertexBuffer::new(self, vao)
             .expect("Device Memory Allocation Error during creation of new Vertex Buffer")
+    }
+
+    fn new_index_buffer(
+        &self,
+        indices: &[u16],
+    ) -> Arc<dyn TypedBufferAccess<Content = [u16]> + Send + Sync> {
+        let (buffer, future) = ImmutableBuffer::from_iter(
+            indices.iter().cloned(),
+            BufferUsage::index_buffer(),
+            self.queue.clone(),
+        )
+        .unwrap();
+        future.flush().unwrap();
+        buffer
     }
 }
 
@@ -373,19 +401,36 @@ impl From<Vec<Vertex>> for VertexArray {
 
 /// Struct to hold a vertex buffer with data
 struct VertexBuffer {
-    buffer: Arc<CpuAccessibleBuffer<[Vertex]>>,
+    vertex_array: Arc<CpuAccessibleBuffer<[Vertex]>>,
+    indices: Arc<dyn TypedBufferAccess<Content = [u16]> + Send + Sync>,
 }
 
 impl VertexBuffer {
-    pub fn new(device: Arc<Device>, array: VertexArray) -> Result<Self, DeviceMemoryAllocError> {
-        let buffer = CpuAccessibleBuffer::from_iter(
-            device,
+    pub fn new(
+        handler: &GraphicsHandler,
+        array: VertexArray,
+    ) -> Result<Self, DeviceMemoryAllocError> {
+        let vertex_array = CpuAccessibleBuffer::from_iter(
+            handler.get_device(),
             BufferUsage::all(),
             false,
             array.data.iter().cloned(),
         )?;
 
-        Ok(Self { buffer })
+        let indices = handler.new_index_buffer(&[0, 1, 2, 2, 3, 0]);
+
+        Ok(Self {
+            vertex_array,
+            indices,
+        })
+    }
+
+    pub fn get_vertices(&self) -> Arc<CpuAccessibleBuffer<[Vertex]>> {
+        self.vertex_array.clone()
+    }
+
+    pub fn get_indices(&self) -> Arc<dyn TypedBufferAccess<Content = [u16]> + Send + Sync> {
+        self.indices.clone()
     }
 }
 
@@ -512,4 +557,36 @@ fn create_raw_swapchain(
         .num_images(buffers_count)
         .build()
         .expect("Couldn't build Vulkan Swapchain")
+}
+
+trait Drawable {
+    fn draw(
+        &self,
+        gl_handler: &mut GraphicsHandler,
+        command_buffer: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    );
+}
+
+struct PrimitiveShape {
+    vertex_buffer: VertexBuffer,
+}
+
+impl Drawable for PrimitiveShape {
+    fn draw(
+        &self,
+        gl_handler: &mut GraphicsHandler,
+        command_buffer: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    ) {
+        command_buffer
+            .draw_indexed(
+                gl_handler.get_pipeline("SimpleTriangle"),
+                &gl_handler.get_swapchain().dynamic_state,
+                self.vertex_buffer.get_vertices(),
+                self.vertex_buffer.get_indices(),
+                (),
+                (),
+                vec![],
+            )
+            .expect("Couldn't add Draw command to Vulkan Render Pass");
+    }
 }
