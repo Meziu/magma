@@ -1,19 +1,19 @@
 // SDL2 imports
 use sdl2::event::{Event, WindowEvent};
-use sdl2::gfx::framerate::FPSManager;
 use sdl2::EventPump;
 use sdl2::Sdl;
 
 // imports from the module
 use super::audio::AudioHandler;
 use super::video::VideoHandler;
+use super::FPSHandler;
 
 /// Main handler to manage calls to the SDL2 API
 pub struct CtxHandler {
     ctx: Sdl,
     event_pump: EventPump,
     pub video: VideoHandler,
-    pub fps_manager: FPSManager,
+    pub fps_manager: FPSHandler,
     pub audio: AudioHandler,
 
     must_break: bool,
@@ -21,7 +21,7 @@ pub struct CtxHandler {
 
 impl CtxHandler {
     /// Generate a new handler with a new context, window, graphics handler, event pump, audio mixer
-    pub fn new(framerate: u32) -> CtxHandler {
+    pub fn new(framerate: u16) -> CtxHandler {
         let ctx = sdl2::init().expect("Couldn't init SDL2 context");
 
         let event_pump = ctx.event_pump().expect("Couldn't obtain Event Pump from SDL2 context");
@@ -29,8 +29,7 @@ impl CtxHandler {
         let video = VideoHandler::new(&ctx, "Rust Testing Grounds");
         let audio = AudioHandler::new();
 
-        let mut fps_manager = FPSManager::new();
-        CtxHandler::_set_framerate(&mut fps_manager, framerate);
+        let fps_manager = FPSHandler::new(framerate);
 
         CtxHandler {
             ctx,
@@ -64,24 +63,17 @@ impl CtxHandler {
     }
 
     /// Public function to set the Ctx's framerate
-    pub fn set_framerate(&mut self, new_framerate: u32) {
-        CtxHandler::_set_framerate(&mut self.fps_manager, new_framerate);
-    }
-
-    /// Private function to set framerate using FPSManager (unsafe in a public environment)
-    fn _set_framerate(fps_manager: &mut FPSManager, new_framerate: u32) {
-        if let Err(e) = fps_manager.set_framerate(new_framerate) {
-            eprintln!("Couldn't set framerate to {}: {}", new_framerate, e);
-        }
+    pub fn set_framerate(&mut self, new_framerate: u16) {
+        self.fps_manager.set_fps(new_framerate);
     }
 
     /// Get the current framerate
-    pub fn get_framerate(&self) -> i32 {
-        self.fps_manager.get_framerate()
+    pub fn get_framerate(&self) -> u16 {
+        self.fps_manager.get_fps()
     }
 
     /// Wait for the next frame based on the current framerate
     pub fn wait(&mut self) {
-        self.fps_manager.delay();
+        self.fps_manager.wait();
     }
 }
