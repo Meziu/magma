@@ -1,23 +1,22 @@
 // standard imports
 use std::cmp::{max, min};
 use std::collections::HashMap;
-use std::ffi::CString;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::io::Cursor;
+use std::convert::TryInto;
 
 // Vulkano imports
-use vulkano::buffer::{
-    immutable::ImmutableBuffer, BufferUsage, CpuAccessibleBuffer, TypedBufferAccess,
-};
+use vulkano::Handle;
+use vulkano::buffer::{BufferUsage, ImmutableBuffer, TypedBufferAccess};
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage, DynamicState, PrimaryAutoCommandBuffer,
     SubpassContents,
 };
-use vulkano::descriptor::PipelineLayoutAbstract;
 use vulkano::device::{Device, DeviceExtensions, Queue};
 use vulkano::image::view::ImageView;
-use vulkano::image::{ImageUsage, SwapchainImage};
-use vulkano::instance::{Instance, PhysicalDevice, RawInstanceExtensions};
+use vulkano::image::{ImageUsage, SwapchainImage, ImageDimensions, ImmutableImage, MipmapsCount};
+use vulkano::instance::{Instance, PhysicalDevice, InstanceExtensions};
 use vulkano::memory::DeviceMemoryAllocError;
 use vulkano::pipeline::vertex::SingleBufferDefinition;
 use vulkano::pipeline::viewport::Viewport;
@@ -29,12 +28,14 @@ use vulkano::swapchain::{AcquireError, Surface, Swapchain, SwapchainCreationErro
 use vulkano::sync;
 use vulkano::sync::{FlushError, GpuFuture};
 use vulkano::VulkanObject;
+use vulkano::Version;
 
 // SDL2 imports
 use sdl2::video::{Window, WindowContext};
 
 // other imports
 use super::sendable::Sendable;
+use png;
 
 /// Use of a macro due to literals needed.
 /// This creates a new pipeline object (using the specified shaders) and appends it to the HashMap.
@@ -89,8 +90,7 @@ pub struct GraphicsHandler {
         String,
         Arc<
             GraphicsPipeline<
-                SingleBufferDefinition<Vertex>,
-                Box<dyn PipelineLayoutAbstract + Send + Sync>,
+                SingleBufferDefinition<Vertex>
             >,
         >,
     >,
@@ -102,7 +102,7 @@ pub struct GraphicsHandler {
 impl GraphicsHandler {
     /// Vulkan object handler instancing and init
     pub fn new(window: &Window) -> Self {
-        let instance = create_instance(window);
+        let instance = create_instance();
 
         let surface = create_surface(instance.clone(), window);
 
@@ -225,7 +225,6 @@ impl GraphicsHandler {
                 vec![[0.0, 0.0, 0.0, 1.0].into()],
             )
             .expect("Couldn't begin Vulkan Render Pass");
-        
         shape.draw(self, &mut builder);
 
         builder
@@ -277,8 +276,7 @@ impl GraphicsHandler {
         name: &str,
     ) -> Arc<
         GraphicsPipeline<
-            SingleBufferDefinition<Vertex>,
-            Box<dyn PipelineLayoutAbstract + Send + Sync>,
+            SingleBufferDefinition<Vertex>
         >,
     > {
         self.pipelines
@@ -401,7 +399,7 @@ impl From<Vec<Vertex>> for VertexArray {
 
 /// Struct to hold a vertex buffer with data
 struct VertexBuffer {
-    vertex_array: Arc<CpuAccessibleBuffer<[Vertex]>>,
+    buffer: Arc<ImmutableBuffer<[Vertex]>>,
     indices: Arc<dyn TypedBufferAccess<Content = [u16]> + Send + Sync>,
 }
 
@@ -410,23 +408,22 @@ impl VertexBuffer {
         handler: &GraphicsHandler,
         array: VertexArray,
     ) -> Result<Self, DeviceMemoryAllocError> {
-        let vertex_array = CpuAccessibleBuffer::from_iter(
-            handler.get_device(),
-            BufferUsage::all(),
-            false,
+        let (buffer, future) = ImmutableBuffer::from_iter(
             array.data.iter().cloned(),
-        )?;
+            BufferUsage::vertex_buffer(),
+            handler.queue.clone(),
+        )
+        .unwrap();
+
+        future.flush().unwrap();
 
         let indices = handler.new_index_buffer(&[0, 1, 2, 2, 3, 0]);
 
-        Ok(Self {
-            vertex_array,
-            indices,
-        })
+        Ok(Self { buffer, indices })
     }
 
-    pub fn get_vertices(&self) -> Arc<CpuAccessibleBuffer<[Vertex]>> {
-        self.vertex_array.clone()
+    pub fn get_vertices(&self) -> Arc<ImmutableBuffer<[Vertex]>> {
+        self.buffer.clone()
     }
 
     pub fn get_indices(&self) -> Arc<dyn TypedBufferAccess<Content = [u16]> + Send + Sync> {
@@ -465,17 +462,10 @@ fn window_size_dependent_setup(
         .collect::<Vec<_>>()
 }
 
-fn create_instance(window: &Window) -> Arc<Instance> {
-    let instance_extensions = window
-        .vulkan_instance_extensions()
-        .expect("Couldn't obtain Vulkan Instance Extensions from the Window");
-    let raw_instance_extensions = RawInstanceExtensions::new(
-        instance_extensions
-            .iter()
-            .map(|&v| CString::new(v).unwrap()),
-    );
+fn create_instance() -> Arc<Instance> {
+    let instance_extensions = InstanceExtensions::supported_by_core().expect("Couldn't obtain Vulkan Instance Extensions");
 
-    Instance::new(None, raw_instance_extensions, None)
+    Instance::new(None, Version::V1_2, &instance_extensions, None)
         .expect("Couldn't create a new Vulkan instance")
 }
 
@@ -484,13 +474,13 @@ fn create_surface(
     window: &Window,
 ) -> Arc<Surface<Sendable<Rc<WindowContext>>>> {
     let surface_handle = window
-        .vulkan_create_surface(instance.internal_object())
+        .vulkan_create_surface(instance.internal_object().as_raw().try_into().unwrap())
         .expect("Couldn't create a new surface from the Vulkan Instance");
     // Use the SDL2 surface from the Window as surface
     unsafe {
         Arc::new(Surface::from_raw_surface(
             instance.clone(),
-            surface_handle,
+            ash::vk::SurfaceKHR::from_raw(surface_handle),
             Sendable::new(window.context()),
         ))
     }
