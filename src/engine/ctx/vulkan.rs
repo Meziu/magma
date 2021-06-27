@@ -1,34 +1,42 @@
 // standard imports
 use std::cmp::{max, min};
 use std::collections::HashMap;
+use std::convert::TryInto;
+use std::fs::File;
+use std::io::{Cursor, Read};
 use std::rc::Rc;
 use std::sync::Arc;
-use std::io::Cursor;
-use std::convert::TryInto;
 
 // Vulkano imports
-use vulkano::Handle;
 use vulkano::buffer::{BufferUsage, ImmutableBuffer, TypedBufferAccess};
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage, DynamicState, PrimaryAutoCommandBuffer,
     SubpassContents,
 };
+use vulkano::Handle;
+
+use vulkano::descriptor::descriptor_set::{
+    PersistentDescriptorSet, PersistentDescriptorSetBuilder, PersistentDescriptorSetImg,
+    PersistentDescriptorSetSampler,
+};
 use vulkano::device::{Device, DeviceExtensions, Queue};
+use vulkano::format::Format;
 use vulkano::image::view::ImageView;
-use vulkano::image::{ImageUsage, SwapchainImage, ImageDimensions, ImmutableImage, MipmapsCount};
-use vulkano::instance::{Instance, PhysicalDevice, InstanceExtensions};
+use vulkano::image::{ImageDimensions, ImageUsage, ImmutableImage, MipmapsCount, SwapchainImage};
+use vulkano::instance::{Instance, InstanceExtensions, PhysicalDevice};
 use vulkano::memory::DeviceMemoryAllocError;
 use vulkano::pipeline::vertex::SingleBufferDefinition;
 use vulkano::pipeline::viewport::Viewport;
-use vulkano::pipeline::GraphicsPipeline;
+use vulkano::pipeline::{GraphicsPipeline, GraphicsPipelineAbstract};
 use vulkano::render_pass::RenderPass;
 use vulkano::render_pass::{Framebuffer, FramebufferAbstract, Subpass};
+use vulkano::sampler::{Filter, MipmapMode, Sampler, SamplerAddressMode};
 use vulkano::swapchain;
 use vulkano::swapchain::{AcquireError, Surface, Swapchain, SwapchainCreationError};
 use vulkano::sync;
 use vulkano::sync::{FlushError, GpuFuture};
-use vulkano::VulkanObject;
 use vulkano::Version;
+use vulkano::VulkanObject;
 
 // SDL2 imports
 use sdl2::video::{Window, WindowContext};
@@ -81,19 +89,23 @@ macro_rules! create_pipeline {
     };};
 }
 
+pub type Texture = Arc<ImageView<Arc<ImmutableImage>>>;
+pub type ImageDescriptorSet = Arc<
+    PersistentDescriptorSet<(
+        (
+            (),
+            PersistentDescriptorSetImg<Arc<ImageView<Arc<ImmutableImage>>>>,
+        ),
+        PersistentDescriptorSetSampler,
+    )>,
+>;
+
 /// Struct to handle connections to the Vulkano (and thus Vulkan) API
 pub struct GraphicsHandler {
     instance: Arc<Instance>,
     swapchain: SwapchainHandler,
     render_pass: Arc<RenderPass>,
-    pipelines: HashMap<
-        String,
-        Arc<
-            GraphicsPipeline<
-                SingleBufferDefinition<Vertex>
-            >,
-        >,
-    >,
+    pipelines: HashMap<String, Arc<GraphicsPipeline<SingleBufferDefinition<Vertex>>>>,
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     device: Arc<Device>,
     queue: Arc<Queue>,
@@ -138,6 +150,14 @@ impl GraphicsHandler {
             render_pass.clone(),
             "assets/shaders/triangle.vert",
             "assets/shaders/triangle.frag",
+            &mut pipelines
+        );
+        create_pipeline!(
+            "Sprite",
+            device.clone(),
+            render_pass.clone(),
+            "assets/shaders/sprite.vert",
+            "assets/shaders/sprite.frag",
             &mut pipelines
         );
 
@@ -214,9 +234,12 @@ impl GraphicsHandler {
                 color: [0.0, 0.0, 0.0],
             },
         ]);
+        let indices = self.new_index_buffer(&[0, 1, 2, 2, 3, 0]);
         let shape = PrimitiveShape {
-            vertex_buffer: self.new_vertex_buffer(vao),
+            vertex_buffer: self.new_vertex_buffer(vao, indices),
         };
+
+        let sprite = Sprite::new("assets/rust.png", self);
 
         builder
             .begin_render_pass(
@@ -226,6 +249,7 @@ impl GraphicsHandler {
             )
             .expect("Couldn't begin Vulkan Render Pass");
         shape.draw(self, &mut builder);
+        sprite.draw(self, &mut builder);
 
         builder
             .end_render_pass()
@@ -271,22 +295,19 @@ impl GraphicsHandler {
         self.device.clone()
     }
 
-    fn get_pipeline(
-        &self,
-        name: &str,
-    ) -> Arc<
-        GraphicsPipeline<
-            SingleBufferDefinition<Vertex>
-        >,
-    > {
+    fn get_pipeline(&self, name: &str) -> Arc<GraphicsPipeline<SingleBufferDefinition<Vertex>>> {
         self.pipelines
             .get(name)
             .expect("No Vulkan Pipeline under this name was found")
             .clone()
     }
 
-    fn new_vertex_buffer(&self, vao: VertexArray) -> VertexBuffer {
-        VertexBuffer::new(self, vao)
+    fn get_queue(&self) -> Arc<Queue> {
+        self.queue.clone()
+    }
+
+    fn new_vertex_buffer(&self, vao: VertexArray, indices: Arc<dyn TypedBufferAccess<Content = [u16]> + Send + Sync>) -> VertexBuffer {
+        VertexBuffer::new(self, vao, indices)
             .expect("Device Memory Allocation Error during creation of new Vertex Buffer")
     }
 
@@ -302,6 +323,74 @@ impl GraphicsHandler {
         .unwrap();
         future.flush().unwrap();
         buffer
+    }
+
+    fn create_empty_descriptor_set_builder(
+        &self,
+        pipeline_name: &str,
+        layout_number: usize,
+    ) -> PersistentDescriptorSetBuilder<()> {
+        let pipeline = self.get_pipeline(pipeline_name);
+        let layout = pipeline
+            .layout()
+            .descriptor_set_layout(layout_number)
+            .expect("Couldn't use Descriptor Set Layout");
+        PersistentDescriptorSet::start(layout.clone())
+    }
+
+    fn create_and_bind_texture<R>(
+        &self,
+        texture_path: &str,
+        desc_set_builder: PersistentDescriptorSetBuilder<R>,
+        sampler: Arc<Sampler>,
+    ) -> PersistentDescriptorSetBuilder<(
+        (
+            R,
+            PersistentDescriptorSetImg<Arc<ImageView<Arc<ImmutableImage>>>>,
+        ),
+        PersistentDescriptorSetSampler,
+    )> {
+        let (texture, _tex_future) = {
+            let decoder = png::Decoder::new(File::open(texture_path).unwrap());
+            let (info, mut reader) = decoder.read_info().unwrap();
+
+            let mut buf = vec![0; info.buffer_size()];
+
+            reader.next_frame(&mut buf).unwrap();
+
+            let dimensions = ImageDimensions::Dim2d{ width: info.width, height: info.height, array_layers: 1 };
+                
+            let (image, future) = ImmutableImage::from_iter(
+                buf.iter().cloned(),
+                dimensions,
+                MipmapsCount::One,
+                Format::R8G8B8A8Srgb,
+                self.get_queue(),
+            )
+            .unwrap();
+            (ImageView::new(image).unwrap(), future)
+        };
+
+        desc_set_builder
+            .add_sampled_image(texture, sampler)
+            .expect("Couldn't add Sampled Image to Descriptor Set")
+    }
+
+    fn create_texture_sampler(&self) -> Arc<Sampler> {
+        Sampler::new(
+            self.get_device(),
+            Filter::Linear,
+            Filter::Linear,
+            MipmapMode::Nearest,
+            SamplerAddressMode::Repeat,
+            SamplerAddressMode::Repeat,
+            SamplerAddressMode::Repeat,
+            0.0,
+            1.0,
+            0.0,
+            0.0,
+        )
+        .expect("Couldn't create Vulkan Texture Sampler")
     }
 }
 
@@ -407,6 +496,7 @@ impl VertexBuffer {
     pub fn new(
         handler: &GraphicsHandler,
         array: VertexArray,
+        indices: Arc<dyn TypedBufferAccess<Content = [u16]> + Send + Sync>,
     ) -> Result<Self, DeviceMemoryAllocError> {
         let (buffer, future) = ImmutableBuffer::from_iter(
             array.data.iter().cloned(),
@@ -416,8 +506,6 @@ impl VertexBuffer {
         .unwrap();
 
         future.flush().unwrap();
-
-        let indices = handler.new_index_buffer(&[0, 1, 2, 2, 3, 0]);
 
         Ok(Self { buffer, indices })
     }
@@ -463,7 +551,8 @@ fn window_size_dependent_setup(
 }
 
 fn create_instance() -> Arc<Instance> {
-    let instance_extensions = InstanceExtensions::supported_by_core().expect("Couldn't obtain Vulkan Instance Extensions");
+    let instance_extensions = InstanceExtensions::supported_by_core()
+        .expect("Couldn't obtain Vulkan Instance Extensions");
 
     Instance::new(None, Version::V1_2, &instance_extensions, None)
         .expect("Couldn't create a new Vulkan instance")
@@ -549,7 +638,7 @@ fn create_raw_swapchain(
         .expect("Couldn't build Vulkan Swapchain")
 }
 
-trait Drawable {
+trait Draw {
     fn draw(
         &self,
         gl_handler: &mut GraphicsHandler,
@@ -561,7 +650,7 @@ struct PrimitiveShape {
     vertex_buffer: VertexBuffer,
 }
 
-impl Drawable for PrimitiveShape {
+impl Draw for PrimitiveShape {
     fn draw(
         &self,
         gl_handler: &mut GraphicsHandler,
@@ -574,6 +663,80 @@ impl Drawable for PrimitiveShape {
                 self.vertex_buffer.get_vertices(),
                 self.vertex_buffer.get_indices(),
                 (),
+                (),
+                vec![],
+            )
+            .expect("Couldn't add Draw command to Vulkan Render Pass");
+    }
+}
+
+type SpriteImmutableDescriptorSet = vulkano::descriptor::descriptor_set::PersistentDescriptorSet<(
+    (
+        (),
+        PersistentDescriptorSetImg<Arc<ImageView<Arc<ImmutableImage>>>>,
+    ),
+    PersistentDescriptorSetSampler,
+)>;
+
+struct Sprite {
+    vertex_buffer: VertexBuffer,
+    immutable_descriptor_set: Arc<SpriteImmutableDescriptorSet>,
+}
+
+impl Sprite {
+    fn new(texture_path: &str, gl_handler: &GraphicsHandler) -> Self {
+        let vao = VertexArray::from(vec![
+            Vertex {
+                position: [-0.5, 0.5],
+                color: [1.0, 0.0, 0.0],
+            },
+            Vertex {
+                position: [-0.5, -0.5],
+                color: [0.0, 0.0, 0.0],
+            },
+            Vertex {
+                position: [0.5, -0.5],
+                color: [0.0, 0.0, 1.0],
+            },
+            Vertex {
+                position: [0.5, 0.5],
+                color: [0.0, 0.0, 0.0],
+            },
+        ]);
+        let indices = gl_handler.new_index_buffer(&[0, 1, 2, 2, 3, 0]);
+        let vertex_buffer = gl_handler.new_vertex_buffer(vao, indices);
+
+
+        let persistent_set = gl_handler.create_empty_descriptor_set_builder("Sprite", 0);
+        let sampler = gl_handler.create_texture_sampler();
+
+        let persistent_set = gl_handler
+            .create_and_bind_texture(texture_path, persistent_set, sampler.clone())
+            .build()
+            .expect("Couldn't build Persistent Descriptor Set for Sprite object");
+
+        let immutable_descriptor_set = Arc::new(persistent_set);
+
+        Self {
+            vertex_buffer,
+            immutable_descriptor_set,
+        }
+    }
+}
+
+impl Draw for Sprite {
+    fn draw(
+        &self,
+        gl_handler: &mut GraphicsHandler,
+        command_buffer: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    ) {
+        command_buffer
+            .draw_indexed(
+                gl_handler.get_pipeline("Sprite"),
+                &gl_handler.get_swapchain().dynamic_state,
+                self.vertex_buffer.get_vertices(),
+                self.vertex_buffer.get_indices(),
+                self.immutable_descriptor_set.clone(),
                 (),
                 vec![],
             )
