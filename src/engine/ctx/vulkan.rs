@@ -3,7 +3,6 @@ use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fs::File;
-use std::io::{Cursor, Read};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -145,7 +144,7 @@ impl GraphicsHandler {
 
         let mut pipelines = HashMap::new();
         create_pipeline!(
-            "SimpleTriangle",
+            "Primitive",
             device.clone(),
             render_pass.clone(),
             "assets/shaders/triangle.vert",
@@ -658,7 +657,7 @@ impl Draw for PrimitiveShape {
     ) {
         command_buffer
             .draw_indexed(
-                gl_handler.get_pipeline("SimpleTriangle"),
+                gl_handler.get_pipeline("Primitive"),
                 &gl_handler.get_swapchain().dynamic_state,
                 self.vertex_buffer.get_vertices(),
                 self.vertex_buffer.get_indices(),

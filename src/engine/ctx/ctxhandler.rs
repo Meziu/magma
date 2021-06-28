@@ -21,15 +21,15 @@ pub struct CtxHandler {
 
 impl CtxHandler {
     /// Generate a new handler with a new context, window, graphics handler, event pump, audio mixer
-    pub fn new(framerate: u16) -> CtxHandler {
+    pub fn new() -> CtxHandler {
         let ctx = sdl2::init().expect("Couldn't init SDL2 context");
 
         let event_pump = ctx.event_pump().expect("Couldn't obtain Event Pump from SDL2 context");
 
-        let video = VideoHandler::new(&ctx, "Rust Testing Grounds");
+        let video = VideoHandler::new(&ctx);
         let audio = AudioHandler::new();
 
-        let fps_manager = FPSHandler::new(framerate);
+        let fps_manager = FPSHandler::new(60);
 
         CtxHandler {
             ctx,

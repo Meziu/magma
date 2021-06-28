@@ -5,7 +5,6 @@ use sdl2::{Sdl, VideoSubsystem};
 // vulkan implementation imports
 use super::vulkan::GraphicsHandler;
 
-
 /// Component of the CtxHandler to handle all calls to graphic APIs
 pub struct VideoHandler {
     video_subsystem: VideoSubsystem,
@@ -16,15 +15,16 @@ pub struct VideoHandler {
 }
 
 impl VideoHandler {
-    pub fn new(ctx: &Sdl, window_name: &str) -> VideoHandler{
+    pub fn new(ctx: &Sdl) -> VideoHandler {
         let video_subsystem = ctx.video().expect("Couldn't obtain SDL2 Video Subsystem");
 
         let window = video_subsystem
-            .window(window_name, 800, 600)
+            .window("Rust Testing Grounds", 800, 600)
             .position_centered()
             .vulkan()
             .resizable()
-            .build().expect("Couldn't build SDL2 Window from Video Subsystem");
+            .build()
+            .expect("Couldn't build SDL2 Window from Video Subsystem");
 
         let gl_handler = GraphicsHandler::new(&window);
 

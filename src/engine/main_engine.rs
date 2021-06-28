@@ -12,7 +12,7 @@ pub struct Engine {
 impl Engine {
     /// Engine init process
     pub fn new() -> Self {
-        let ctx_handler = CtxHandler::new(60);
+        let ctx_handler = CtxHandler::new();
 
         Self { ctx_handler }
     }
