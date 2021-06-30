@@ -1,9 +1,15 @@
+// standard imports
+use std::rc::Rc;
+
 // SDL2 imports
 use sdl2::video::Window;
 use sdl2::{Sdl, VideoSubsystem};
 
 // vulkan implementation imports
 use super::vulkan::GraphicsHandler;
+
+// other imports
+use super::draw_objects::{Sprite};
 
 /// Component of the CtxHandler to handle all calls to graphic APIs
 pub struct VideoHandler {
@@ -41,6 +47,10 @@ impl VideoHandler {
     }
     pub fn set_window_resized(&mut self, new_value: bool) {
         self.window_resized = new_value;
+    }
+
+    pub fn new_sprite(&mut self, texture_path: &str) -> Rc<Sprite> {
+        self.gl_handler.new_sprite(texture_path)
     }
 
     /// Frame-by-frame update of the graphics and everything related

@@ -34,6 +34,8 @@ impl Engine {
             println!("Music couldn't be loaded...");
         }
 
+        self.ctx_handler.video.new_sprite("assets/rust.png");
+
         'mainloop: loop {
             self.ctx_handler.check_events();
             if self.ctx_handler.get_break_signal() {

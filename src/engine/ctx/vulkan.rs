@@ -9,8 +9,7 @@ use std::sync::Arc;
 // Vulkano imports
 use vulkano::buffer::{BufferUsage, ImmutableBuffer, TypedBufferAccess};
 use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, CommandBufferUsage, DynamicState, PrimaryAutoCommandBuffer,
-    SubpassContents,
+    AutoCommandBufferBuilder, CommandBufferUsage, DynamicState, SubpassContents,
 };
 use vulkano::Handle;
 
@@ -41,6 +40,7 @@ use vulkano::VulkanObject;
 use sdl2::video::{Window, WindowContext};
 
 // other imports
+use super::draw_objects::{Draw, Sprite};
 use super::sendable::Sendable;
 use png;
 
@@ -108,6 +108,7 @@ pub struct GraphicsHandler {
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     device: Arc<Device>,
     queue: Arc<Queue>,
+    draw_objects: Vec<Rc<dyn Draw>>,
 }
 
 impl GraphicsHandler {
@@ -163,6 +164,10 @@ impl GraphicsHandler {
         let swapchain = SwapchainHandler::new(swapchain.clone(), images, render_pass.clone());
 
         let previous_frame_end = Some(sync::now(device.clone()).boxed());
+
+        let mut draw_objects = Vec::new();
+        draw_objects.reserve(50);
+
         Self {
             instance: instance.clone(),
             swapchain,
@@ -171,6 +176,7 @@ impl GraphicsHandler {
             previous_frame_end,
             device,
             queue,
+            draw_objects,
         }
     }
 
@@ -215,31 +221,6 @@ impl GraphicsHandler {
         )
         .expect("Couldn't build Vulkan AutoCommandBuffer");
 
-        let vao = VertexArray::from(vec![
-            Vertex {
-                position: [-0.5, 0.5],
-                color: [1.0, 0.0, 0.0],
-            },
-            Vertex {
-                position: [-0.5, -0.5],
-                color: [0.0, 0.0, 0.0],
-            },
-            Vertex {
-                position: [0.5, -0.5],
-                color: [0.0, 0.0, 1.0],
-            },
-            Vertex {
-                position: [0.5, 0.5],
-                color: [0.0, 0.0, 0.0],
-            },
-        ]);
-        let indices = self.new_index_buffer(&[0, 1, 2, 2, 3, 0]);
-        let shape = PrimitiveShape {
-            vertex_buffer: self.new_vertex_buffer(vao, indices),
-        };
-
-        let sprite = Sprite::new("assets/rust.png", self);
-
         builder
             .begin_render_pass(
                 self.get_swapchain().framebuffers[image_num].clone(),
@@ -247,8 +228,13 @@ impl GraphicsHandler {
                 vec![[0.0, 0.0, 0.0, 1.0].into()],
             )
             .expect("Couldn't begin Vulkan Render Pass");
-        shape.draw(self, &mut builder);
-        sprite.draw(self, &mut builder);
+
+        let draw_iter = self.draw_objects.clone();
+        let draw_iter = draw_iter.iter();
+
+        for obj in draw_iter {
+            obj.draw(self, &mut builder);
+        }
 
         builder
             .end_render_pass()
@@ -286,31 +272,38 @@ impl GraphicsHandler {
         }
     }
 
-    fn get_swapchain(&mut self) -> &mut SwapchainHandler {
+    pub fn get_swapchain(&mut self) -> &mut SwapchainHandler {
         &mut self.swapchain
     }
 
-    fn get_device(&self) -> Arc<Device> {
+    pub fn get_device(&self) -> Arc<Device> {
         self.device.clone()
     }
 
-    fn get_pipeline(&self, name: &str) -> Arc<GraphicsPipeline<SingleBufferDefinition<Vertex>>> {
+    pub fn get_pipeline(
+        &self,
+        name: &str,
+    ) -> Arc<GraphicsPipeline<SingleBufferDefinition<Vertex>>> {
         self.pipelines
             .get(name)
             .expect("No Vulkan Pipeline under this name was found")
             .clone()
     }
 
-    fn get_queue(&self) -> Arc<Queue> {
+    pub fn get_queue(&self) -> Arc<Queue> {
         self.queue.clone()
     }
 
-    fn new_vertex_buffer(&self, vao: VertexArray, indices: Arc<dyn TypedBufferAccess<Content = [u16]> + Send + Sync>) -> VertexBuffer {
+    pub fn new_vertex_buffer(
+        &self,
+        vao: VertexArray,
+        indices: Arc<dyn TypedBufferAccess<Content = [u16]> + Send + Sync>,
+    ) -> VertexBuffer {
         VertexBuffer::new(self, vao, indices)
             .expect("Device Memory Allocation Error during creation of new Vertex Buffer")
     }
 
-    fn new_index_buffer(
+    pub fn new_index_buffer(
         &self,
         indices: &[u16],
     ) -> Arc<dyn TypedBufferAccess<Content = [u16]> + Send + Sync> {
@@ -324,7 +317,19 @@ impl GraphicsHandler {
         buffer
     }
 
-    fn create_empty_descriptor_set_builder(
+    pub fn new_sprite(&mut self, texture_path: &str) -> Rc<Sprite> {
+        let sprite = Rc::new(Sprite::new(texture_path, self));
+
+        self.append_draw_object(sprite.clone());
+
+        sprite
+    }
+
+    fn append_draw_object(&mut self, obj: Rc<dyn Draw>) {
+        self.draw_objects.push(obj);
+    }
+
+    pub fn create_empty_descriptor_set_builder(
         &self,
         pipeline_name: &str,
         layout_number: usize,
@@ -337,7 +342,7 @@ impl GraphicsHandler {
         PersistentDescriptorSet::start(layout.clone())
     }
 
-    fn create_and_bind_texture<R>(
+    pub fn create_and_bind_texture<R>(
         &self,
         texture_path: &str,
         desc_set_builder: PersistentDescriptorSetBuilder<R>,
@@ -357,8 +362,11 @@ impl GraphicsHandler {
 
             reader.next_frame(&mut buf).unwrap();
 
-            let dimensions = ImageDimensions::Dim2d{ width: info.width, height: info.height, array_layers: 1 };
-                
+            let dimensions = ImageDimensions::Dim2d {
+                width: info.width,
+                height: info.height,
+                array_layers: 1,
+            };
             let (image, future) = ImmutableImage::from_iter(
                 buf.iter().cloned(),
                 dimensions,
@@ -375,7 +383,7 @@ impl GraphicsHandler {
             .expect("Couldn't add Sampled Image to Descriptor Set")
     }
 
-    fn create_texture_sampler(&self) -> Arc<Sampler> {
+    pub fn create_texture_sampler(&self) -> Arc<Sampler> {
         Sampler::new(
             self.get_device(),
             Filter::Linear,
@@ -394,12 +402,12 @@ impl GraphicsHandler {
 }
 
 /// Type to hold swapchain and corresponding images
-struct SwapchainHandler {
+pub struct SwapchainHandler {
     chain: Arc<Swapchain<Sendable<Rc<WindowContext>>>>,
     images: Vec<Arc<SwapchainImage<Sendable<Rc<WindowContext>>>>>,
     framebuffers: Vec<Arc<dyn FramebufferAbstract + Send + Sync>>,
     must_recreate: bool,
-    dynamic_state: DynamicState,
+    dynamic_state: Box<DynamicState>,
 }
 
 impl SwapchainHandler {
@@ -408,17 +416,17 @@ impl SwapchainHandler {
         images: Vec<Arc<SwapchainImage<Sendable<Rc<WindowContext>>>>>,
         render_pass: Arc<RenderPass>,
     ) -> Self {
-        let mut dynamic_state = DynamicState {
+        let mut dynamic_state = Box::new(DynamicState {
             line_width: None,
             viewports: None,
             scissors: None,
             compare_mask: None,
             write_mask: None,
             reference: None,
-        };
+        });
 
         let framebuffers =
-            window_size_dependent_setup(&images[..], render_pass.clone(), &mut dynamic_state);
+            window_size_dependent_setup(&images[..], render_pass.clone(), dynamic_state.as_mut());
 
         Self {
             chain: swapchain,
@@ -464,18 +472,22 @@ impl SwapchainHandler {
     fn set_recreate(&mut self, new_value: bool) {
         self.must_recreate = new_value;
     }
+
+    pub fn get_dynamic_state(&mut self) -> &mut DynamicState {
+        self.dynamic_state.as_mut()
+    }
 }
 
 /// Struct to hold vertex data
 #[derive(Default, Copy, Clone)]
-struct Vertex {
-    position: [f32; 2],
-    color: [f32; 3],
+pub struct Vertex {
+    pub position: [f32; 2],
+    pub color: [f32; 3],
 }
 vulkano::impl_vertex!(Vertex, position, color);
 
 /// Simple struct to hold an array of vertices
-struct VertexArray {
+pub struct VertexArray {
     data: Vec<Vertex>,
 }
 
@@ -486,7 +498,7 @@ impl From<Vec<Vertex>> for VertexArray {
 }
 
 /// Struct to hold a vertex buffer with data
-struct VertexBuffer {
+pub struct VertexBuffer {
     buffer: Arc<ImmutableBuffer<[Vertex]>>,
     indices: Arc<dyn TypedBufferAccess<Content = [u16]> + Send + Sync>,
 }
@@ -635,110 +647,4 @@ fn create_raw_swapchain(
         .num_images(buffers_count)
         .build()
         .expect("Couldn't build Vulkan Swapchain")
-}
-
-trait Draw {
-    fn draw(
-        &self,
-        gl_handler: &mut GraphicsHandler,
-        command_buffer: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-    );
-}
-
-struct PrimitiveShape {
-    vertex_buffer: VertexBuffer,
-}
-
-impl Draw for PrimitiveShape {
-    fn draw(
-        &self,
-        gl_handler: &mut GraphicsHandler,
-        command_buffer: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-    ) {
-        command_buffer
-            .draw_indexed(
-                gl_handler.get_pipeline("Primitive"),
-                &gl_handler.get_swapchain().dynamic_state,
-                self.vertex_buffer.get_vertices(),
-                self.vertex_buffer.get_indices(),
-                (),
-                (),
-                vec![],
-            )
-            .expect("Couldn't add Draw command to Vulkan Render Pass");
-    }
-}
-
-type SpriteImmutableDescriptorSet = vulkano::descriptor::descriptor_set::PersistentDescriptorSet<(
-    (
-        (),
-        PersistentDescriptorSetImg<Arc<ImageView<Arc<ImmutableImage>>>>,
-    ),
-    PersistentDescriptorSetSampler,
-)>;
-
-struct Sprite {
-    vertex_buffer: VertexBuffer,
-    immutable_descriptor_set: Arc<SpriteImmutableDescriptorSet>,
-}
-
-impl Sprite {
-    fn new(texture_path: &str, gl_handler: &GraphicsHandler) -> Self {
-        let vao = VertexArray::from(vec![
-            Vertex {
-                position: [-0.5, 0.5],
-                color: [1.0, 0.0, 0.0],
-            },
-            Vertex {
-                position: [-0.5, -0.5],
-                color: [0.0, 0.0, 0.0],
-            },
-            Vertex {
-                position: [0.5, -0.5],
-                color: [0.0, 0.0, 1.0],
-            },
-            Vertex {
-                position: [0.5, 0.5],
-                color: [0.0, 0.0, 0.0],
-            },
-        ]);
-        let indices = gl_handler.new_index_buffer(&[0, 1, 2, 2, 3, 0]);
-        let vertex_buffer = gl_handler.new_vertex_buffer(vao, indices);
-
-
-        let persistent_set = gl_handler.create_empty_descriptor_set_builder("Sprite", 0);
-        let sampler = gl_handler.create_texture_sampler();
-
-        let persistent_set = gl_handler
-            .create_and_bind_texture(texture_path, persistent_set, sampler.clone())
-            .build()
-            .expect("Couldn't build Persistent Descriptor Set for Sprite object");
-
-        let immutable_descriptor_set = Arc::new(persistent_set);
-
-        Self {
-            vertex_buffer,
-            immutable_descriptor_set,
-        }
-    }
-}
-
-impl Draw for Sprite {
-    fn draw(
-        &self,
-        gl_handler: &mut GraphicsHandler,
-        command_buffer: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-    ) {
-        command_buffer
-            .draw_indexed(
-                gl_handler.get_pipeline("Sprite"),
-                &gl_handler.get_swapchain().dynamic_state,
-                self.vertex_buffer.get_vertices(),
-                self.vertex_buffer.get_indices(),
-                self.immutable_descriptor_set.clone(),
-                (),
-                vec![],
-            )
-            .expect("Couldn't add Draw command to Vulkan Render Pass");
-    }
 }

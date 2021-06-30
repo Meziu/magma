@@ -5,6 +5,7 @@ mod video;
 
 pub mod ctxhandler;
 pub mod framerate;
+pub mod draw_objects;
 
 
 pub use ctxhandler::CtxHandler;
