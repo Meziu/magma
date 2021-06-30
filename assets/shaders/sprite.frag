@@ -1,6 +1,6 @@
 #version 450
 
-layout(location = 0) in vec3 frag_color;
+layout(location = 0) in vec3 color;
 layout(location = 1) in vec2 tex_coords;
 
 
@@ -11,5 +11,5 @@ layout(set = 0, binding = 0) uniform sampler2D tex;
 
 
 void main() {
-    f_color = texture(tex, tex_coords);
+    f_color = texture(tex, tex_coords) * vec4(color, 1.0);
 }
