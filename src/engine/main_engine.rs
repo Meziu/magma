@@ -29,8 +29,7 @@ impl Engine {
                 Ok(_) => println!("Music played fine!"),
                 Err(_) => println!("Music couldn't play..."),
             }
-        }
-        else {
+        } else {
             println!("Music couldn't be loaded...");
         }
 

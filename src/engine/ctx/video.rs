@@ -9,7 +9,7 @@ use sdl2::{Sdl, VideoSubsystem};
 use super::vulkan::GraphicsHandler;
 
 // other imports
-use super::draw_objects::{Sprite};
+use super::draw_objects::Sprite;
 
 /// Component of the CtxHandler to handle all calls to graphic APIs
 pub struct VideoHandler {

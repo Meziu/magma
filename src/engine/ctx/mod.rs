@@ -1,12 +1,11 @@
-mod vulkan;
-mod sendable;
 mod audio;
+mod sendable;
 mod video;
+mod vulkan;
 
 pub mod ctxhandler;
-pub mod framerate;
 pub mod draw_objects;
-
+pub mod framerate;
 
 pub use ctxhandler::CtxHandler;
 pub use framerate::FPSHandler;

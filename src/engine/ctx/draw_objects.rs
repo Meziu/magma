@@ -2,17 +2,19 @@
 use std::sync::Arc;
 
 // vulkan imports
-use vulkano::command_buffer::{
-    AutoCommandBufferBuilder, PrimaryAutoCommandBuffer,
-};
-use vulkano::descriptor::descriptor_set::{PersistentDescriptorSetImg,PersistentDescriptorSetSampler,
+use vulkano::buffer::{ImmutableBuffer, TypedBufferAccess};
+use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
+use vulkano::descriptor::descriptor_set::collection::DescriptorSetsCollection;
+use vulkano::descriptor::descriptor_set::{
+    PersistentDescriptorSetImg, PersistentDescriptorSetSampler,
 };
 use vulkano::image::view::ImageView;
 use vulkano::image::ImmutableImage;
+use vulkano::pipeline::GraphicsPipeline;
+use vulkano::pipeline::vertex::SingleBufferDefinition;
 
 // vulkan implementation imports
-use super::vulkan::{GraphicsHandler, VertexBuffer, Vertex, VertexArray};
-
+use super::vulkan::{GraphicsHandler, Vertex, VertexArray, VertexBuffer};
 
 pub trait Draw {
     fn draw(
@@ -32,17 +34,14 @@ impl Draw for PrimitiveShape {
         gl_handler: &mut GraphicsHandler,
         command_buffer: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     ) {
-        command_buffer
-            .draw_indexed(
-                gl_handler.get_pipeline("Primitive"),
-                &gl_handler.get_swapchain().get_dynamic_state(),
-                self.vertex_buffer.get_vertices(),
-                self.vertex_buffer.get_indices(),
-                (),
-                (),
-                vec![],
-            )
-            .expect("Couldn't add Draw command to Vulkan Render Pass");
+        draw(
+            gl_handler,
+            gl_handler.get_pipeline("Primitive"),
+            command_buffer,
+            self.vertex_buffer.get_vertices(),
+            self.vertex_buffer.get_indices(),
+            (),
+        )
     }
 }
 
@@ -82,7 +81,6 @@ impl Sprite {
         let indices = gl_handler.new_index_buffer(&[0, 1, 2, 2, 3, 0]);
         let vertex_buffer = gl_handler.new_vertex_buffer(vao, indices);
 
-
         let persistent_set = gl_handler.create_empty_descriptor_set_builder("Sprite", 0);
         let sampler = gl_handler.create_texture_sampler();
 
@@ -106,16 +104,36 @@ impl Draw for Sprite {
         gl_handler: &mut GraphicsHandler,
         command_buffer: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     ) {
-        command_buffer
-            .draw_indexed(
-                gl_handler.get_pipeline("Sprite"),
-                &gl_handler.get_swapchain().get_dynamic_state(),
-                self.vertex_buffer.get_vertices(),
-                self.vertex_buffer.get_indices(),
-                self.immutable_descriptor_set.clone(),
-                (),
-                vec![],
-            )
-            .expect("Couldn't add Draw command to Vulkan Render Pass");
+        draw(
+            gl_handler,
+            gl_handler.get_pipeline("Sprite"),
+            command_buffer,
+            self.vertex_buffer.get_vertices(),
+            self.vertex_buffer.get_indices(),
+            vec![self.immutable_descriptor_set.clone()],
+        )
     }
+}
+
+fn draw<DescSet>(
+    gl_handler: &mut GraphicsHandler,
+    pipeline: Arc<GraphicsPipeline<SingleBufferDefinition<Vertex>>>,
+    cmnd_buf: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
+    vertices: Arc<ImmutableBuffer<[Vertex]>>,
+    indices: Arc<dyn TypedBufferAccess<Content = [u16]> + Send + Sync>,
+    sets: DescSet,
+) where
+    DescSet: DescriptorSetsCollection,
+{
+    cmnd_buf
+        .draw_indexed(
+            pipeline,
+            &gl_handler.get_swapchain().get_dynamic_state(),
+            vertices,
+            indices,
+            sets,
+            (),
+            vec![],
+        )
+        .expect("Couldn't add Draw command to Vulkan Render Pass");
 }
