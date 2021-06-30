@@ -272,6 +272,11 @@ impl GraphicsHandler {
         }
     }
 
+    fn sort_draw_objects(&mut self) {
+        self.draw_objects
+            .sort_by(|a, b| a.get_z_index().cmp(&b.get_z_index()));
+    }
+
     pub fn get_swapchain(&mut self) -> &mut SwapchainHandler {
         &mut self.swapchain
     }
@@ -317,8 +322,8 @@ impl GraphicsHandler {
         buffer
     }
 
-    pub fn new_sprite(&mut self, texture_path: &str) -> Rc<Sprite> {
-        let sprite = Rc::new(Sprite::new(texture_path, self));
+    pub fn new_sprite(&mut self, texture_path: &str, z_index: u8) -> Rc<Sprite> {
+        let sprite = Rc::new(Sprite::new(texture_path, self, z_index));
 
         self.append_draw_object(sprite.clone());
 
@@ -327,6 +332,7 @@ impl GraphicsHandler {
 
     fn append_draw_object(&mut self, obj: Rc<dyn Draw>) {
         self.draw_objects.push(obj);
+        self.sort_draw_objects();
     }
 
     pub fn create_empty_descriptor_set_builder(

@@ -49,8 +49,8 @@ impl VideoHandler {
         self.window_resized = new_value;
     }
 
-    pub fn new_sprite(&mut self, texture_path: &str) -> Rc<Sprite> {
-        self.gl_handler.new_sprite(texture_path)
+    pub fn new_sprite(&mut self, texture_path: &str, z_index: u8) -> Rc<Sprite> {
+        self.gl_handler.new_sprite(texture_path, z_index)
     }
 
     /// Frame-by-frame update of the graphics and everything related

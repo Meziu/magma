@@ -33,7 +33,10 @@ impl Engine {
             println!("Music couldn't be loaded...");
         }
 
-        self.ctx_handler.video.new_sprite("assets/rust.png");
+        // before, z index wasn't sorted and depth depended on the order in the vector
+        // now the order isn't important but the z index must be specified
+        self.ctx_handler.video.new_sprite("assets/rust.png", 1);
+        self.ctx_handler.video.new_sprite("assets/python.png", 0);
 
         'mainloop: loop {
             self.ctx_handler.check_events();

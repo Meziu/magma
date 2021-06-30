@@ -10,8 +10,8 @@ use vulkano::descriptor::descriptor_set::{
 };
 use vulkano::image::view::ImageView;
 use vulkano::image::ImmutableImage;
-use vulkano::pipeline::GraphicsPipeline;
 use vulkano::pipeline::vertex::SingleBufferDefinition;
+use vulkano::pipeline::GraphicsPipeline;
 
 // vulkan implementation imports
 use super::vulkan::{GraphicsHandler, Vertex, VertexArray, VertexBuffer};
@@ -22,6 +22,8 @@ pub trait Draw {
         gl_handler: &mut GraphicsHandler,
         command_buffer: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
     );
+
+    fn get_z_index(&self) -> u8;
 }
 
 pub struct PrimitiveShape {
@@ -43,6 +45,10 @@ impl Draw for PrimitiveShape {
             (),
         )
     }
+
+    fn get_z_index(&self) -> u8 {
+        0
+    }
 }
 
 type SpriteImmutableDescriptorSet = vulkano::descriptor::descriptor_set::PersistentDescriptorSet<(
@@ -53,13 +59,15 @@ type SpriteImmutableDescriptorSet = vulkano::descriptor::descriptor_set::Persist
     PersistentDescriptorSetSampler,
 )>;
 
+/// Struct to handle sprite entities on screen capable of having transforms
 pub struct Sprite {
     vertex_buffer: VertexBuffer,
     immutable_descriptor_set: Arc<SpriteImmutableDescriptorSet>,
+    z_index: u8,
 }
 
 impl Sprite {
-    pub fn new(texture_path: &str, gl_handler: &GraphicsHandler) -> Self {
+    pub fn new(texture_path: &str, gl_handler: &GraphicsHandler, z_index: u8) -> Self {
         let vao = VertexArray::from(vec![
             Vertex {
                 position: [-0.5, 0.5],
@@ -94,6 +102,7 @@ impl Sprite {
         Self {
             vertex_buffer,
             immutable_descriptor_set,
+            z_index,
         }
     }
 }
@@ -112,6 +121,10 @@ impl Draw for Sprite {
             self.vertex_buffer.get_indices(),
             vec![self.immutable_descriptor_set.clone()],
         )
+    }
+
+    fn get_z_index(&self) -> u8 {
+        self.z_index
     }
 }
 
