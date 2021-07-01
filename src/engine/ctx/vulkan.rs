@@ -3,11 +3,12 @@ use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fs::File;
+use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::sync::Arc;
 
 // Vulkano imports
-use vulkano::buffer::{BufferUsage, ImmutableBuffer, TypedBufferAccess};
+use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, ImmutableBuffer, TypedBufferAccess};
 use vulkano::command_buffer::{
     AutoCommandBufferBuilder, CommandBufferUsage, DynamicState, SubpassContents,
 };
@@ -42,6 +43,7 @@ use sdl2::video::{Window, WindowContext};
 // other imports
 use super::draw_objects::{Draw, Sprite};
 use super::sendable::Sendable;
+use cgmath::Vector2;
 use png;
 
 /// Use of a macro due to literals needed.
@@ -98,6 +100,14 @@ pub type ImageDescriptorSet = Arc<
         PersistentDescriptorSetSampler,
     )>,
 >;
+pub type GlobalUniformBuffer = CpuAccessibleBuffer<GlobalUniformData>;
+
+/// Struct to hold the global data needed for graphics
+#[derive(Clone, Copy)]
+pub struct GlobalUniformData {
+    window_size: Vector2<u32>,
+    camera_position: Vector2<f32>,
+}
 
 /// Struct to handle connections to the Vulkano (and thus Vulkan) API
 pub struct GraphicsHandler {
@@ -109,6 +119,8 @@ pub struct GraphicsHandler {
     device: Arc<Device>,
     queue: Arc<Queue>,
     draw_objects: Vec<Rc<dyn Draw>>,
+
+    global_uniform_buffer: Arc<GlobalUniformBuffer>,
 }
 
 impl GraphicsHandler {
@@ -168,6 +180,21 @@ impl GraphicsHandler {
         let mut draw_objects = Vec::new();
         draw_objects.reserve(50);
 
+        let window_size = window.size();
+        let window_size = Vector2::new(window_size.0, window_size.1);
+
+        let global_uniform_data = GlobalUniformData {
+            camera_position: Vector2::new(0.0, 0.0),
+            window_size,
+        };
+        let global_uniform_buffer = CpuAccessibleBuffer::from_data(
+            device.clone(),
+            BufferUsage::uniform_buffer_transfer_destination(),
+            true,
+            global_uniform_data,
+        )
+        .unwrap();
+
         Self {
             instance: instance.clone(),
             swapchain,
@@ -177,6 +204,7 @@ impl GraphicsHandler {
             device,
             queue,
             draw_objects,
+            global_uniform_buffer,
         }
     }
 
@@ -187,6 +215,7 @@ impl GraphicsHandler {
                 if resized {
                     true
                 } else {
+                    self.write_window_size(window.size());
                     self.swapchain.get_recreate()
                 }
             };
@@ -299,6 +328,42 @@ impl GraphicsHandler {
         self.queue.clone()
     }
 
+    pub fn get_global_uniform_buffer(&self) -> Arc<GlobalUniformBuffer> {
+        self.global_uniform_buffer.clone()
+    }
+
+    pub fn write_window_size(&self, dimensions: (u32, u32)) {
+        let window_size = Vector2::new(dimensions.0, dimensions.1);
+
+        if let Ok(mut write_lock) = self.global_uniform_buffer.write() {
+            let global_data = write_lock.deref_mut();
+
+            global_data.window_size = window_size;
+        } else {
+            //println!("Couldn't write the buffer");
+        }
+    }
+
+    pub fn write_camera_position(&self, new_position: Vector2<f32>) {
+        let mut write_lock = self
+            .global_uniform_buffer
+            .write()
+            .expect("Couldn't write the buffer");
+        let global_data = write_lock.deref_mut();
+
+        global_data.camera_position = new_position;
+    }
+
+    pub fn read_camera_position(&self) -> Vector2<f32> {
+        let read_lock = self
+            .global_uniform_buffer
+            .read()
+            .expect("Couldn't read the buffer");
+        let global_data = read_lock.deref();
+
+        global_data.camera_position.clone()
+    }
+
     pub fn new_vertex_buffer(
         &self,
         vao: VertexArray,
@@ -353,40 +418,45 @@ impl GraphicsHandler {
         texture_path: &str,
         desc_set_builder: PersistentDescriptorSetBuilder<R>,
         sampler: Arc<Sampler>,
-    ) -> PersistentDescriptorSetBuilder<(
-        (
-            R,
-            PersistentDescriptorSetImg<Arc<ImageView<Arc<ImmutableImage>>>>,
-        ),
-        PersistentDescriptorSetSampler,
-    )> {
-        let (texture, _tex_future) = {
-            let decoder = png::Decoder::new(File::open(texture_path).unwrap());
-            let (info, mut reader) = decoder.read_info().unwrap();
+    ) -> (
+        PersistentDescriptorSetBuilder<(
+            (
+                R,
+                PersistentDescriptorSetImg<Arc<ImageView<Arc<ImmutableImage>>>>,
+            ),
+            PersistentDescriptorSetSampler,
+        )>,
+        Vector2<u32>,
+    ) {
+        let decoder = png::Decoder::new(File::open(texture_path).unwrap());
+        let (info, mut reader) = decoder.read_info().unwrap();
 
-            let mut buf = vec![0; info.buffer_size()];
+        let mut buf = vec![0; info.buffer_size()];
 
-            reader.next_frame(&mut buf).unwrap();
+        reader.next_frame(&mut buf).unwrap();
 
-            let dimensions = ImageDimensions::Dim2d {
-                width: info.width,
-                height: info.height,
-                array_layers: 1,
-            };
-            let (image, future) = ImmutableImage::from_iter(
-                buf.iter().cloned(),
-                dimensions,
-                MipmapsCount::One,
-                Format::R8G8B8A8Srgb,
-                self.get_queue(),
-            )
-            .unwrap();
-            (ImageView::new(image).unwrap(), future)
+        let dimensions = ImageDimensions::Dim2d {
+            width: info.width,
+            height: info.height,
+            array_layers: 1,
         };
+        let (image, future) = ImmutableImage::from_iter(
+            buf.iter().cloned(),
+            dimensions.clone(),
+            MipmapsCount::One,
+            Format::R8G8B8A8Srgb,
+            self.get_queue(),
+        )
+        .unwrap();
 
-        desc_set_builder
-            .add_sampled_image(texture, sampler)
-            .expect("Couldn't add Sampled Image to Descriptor Set")
+        let (texture, _tex_future) = (ImageView::new(image).unwrap(), future);
+
+        (
+            desc_set_builder
+                .add_sampled_image(texture, sampler)
+                .expect("Couldn't add Sampled Image to Descriptor Set"),
+            Vector2::new(info.width, info.height),
+        )
     }
 
     pub fn create_texture_sampler(&self) -> Arc<Sampler> {
@@ -487,9 +557,9 @@ impl SwapchainHandler {
 /// Struct to hold vertex data
 #[derive(Default, Copy, Clone)]
 pub struct Vertex {
-    pub position: [f32; 2],
+    pub vert_pos: [f32; 2],
 }
-vulkano::impl_vertex!(Vertex, position);
+vulkano::impl_vertex!(Vertex, vert_pos);
 
 /// Simple struct to hold an array of vertices
 pub struct VertexArray {
