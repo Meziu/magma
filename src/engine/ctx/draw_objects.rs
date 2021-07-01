@@ -1,12 +1,14 @@
 // standard imports
 use std::sync::Arc;
+use std::ops::{Deref, DerefMut};
 
 // vulkan imports
-use vulkano::buffer::{ImmutableBuffer, TypedBufferAccess};
+use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, ImmutableBuffer, TypedBufferAccess};
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::descriptor::descriptor_set::collection::DescriptorSetsCollection;
 use vulkano::descriptor::descriptor_set::{
-    PersistentDescriptorSetImg, PersistentDescriptorSetSampler,
+    PersistentDescriptorSet, PersistentDescriptorSetBuf, PersistentDescriptorSetImg,
+    PersistentDescriptorSetSampler,
 };
 use vulkano::image::view::ImageView;
 use vulkano::image::ImmutableImage;
@@ -15,6 +17,9 @@ use vulkano::pipeline::GraphicsPipeline;
 
 // vulkan implementation imports
 use super::vulkan::{GraphicsHandler, Vertex, VertexArray, VertexBuffer};
+
+// other imports
+use cgmath::{Vector3, Vector2};
 
 pub trait Draw {
     fn draw(
@@ -26,6 +31,8 @@ pub trait Draw {
     fn get_z_index(&self) -> u8;
 }
 
+/// Struct for User generated shapes
+/// DO NOT USE, IT'S NOT UPDATED
 pub struct PrimitiveShape {
     vertex_buffer: VertexBuffer,
 }
@@ -51,18 +58,29 @@ impl Draw for PrimitiveShape {
     }
 }
 
-type SpriteImmutableDescriptorSet = vulkano::descriptor::descriptor_set::PersistentDescriptorSet<(
+type SpriteImmutableDescriptorSet = PersistentDescriptorSet<(
     (
-        (),
-        PersistentDescriptorSetImg<Arc<ImageView<Arc<ImmutableImage>>>>,
+        (
+            (),
+            PersistentDescriptorSetImg<Arc<ImageView<Arc<ImmutableImage>>>>,
+        ),
+        PersistentDescriptorSetSampler,
     ),
-    PersistentDescriptorSetSampler,
+    PersistentDescriptorSetBuf<Arc<CpuAccessibleBuffer<SpriteData>>>,
 )>;
+
+/// Struct to hold data that both CPU and GPU must access
+#[derive(Copy, Clone)]
+struct SpriteData {
+    color: Vector3<f32>,
+    global_position: Vector2<f32>,
+}
 
 /// Struct to handle sprite entities on screen capable of having transforms
 pub struct Sprite {
     vertex_buffer: VertexBuffer,
-    immutable_descriptor_set: Arc<SpriteImmutableDescriptorSet>,
+    descriptor_set: Arc<SpriteImmutableDescriptorSet>,
+    cpu_buffer: Arc<CpuAccessibleBuffer<SpriteData>>,
     z_index: u8,
 }
 
@@ -88,18 +106,62 @@ impl Sprite {
         let persistent_set = gl_handler.create_empty_descriptor_set_builder("Sprite", 0);
         let sampler = gl_handler.create_texture_sampler();
 
+        let color = Vector3::new(1.0, 1.0, 1.0);
+        let global_position = Vector2::new(0.0, 0.0);
+
+        let sprite_data = SpriteData {global_position, color};
+
+        let cpu_buffer = CpuAccessibleBuffer::from_data(
+            gl_handler.get_device(),
+            BufferUsage::uniform_buffer_transfer_destination(),
+            true,
+            sprite_data,
+        )
+        .unwrap();
+
         let persistent_set = gl_handler
             .create_and_bind_texture(texture_path, persistent_set, sampler.clone())
+            .add_buffer(cpu_buffer.clone())
+            .unwrap()
             .build()
             .expect("Couldn't build Persistent Descriptor Set for Sprite object");
 
-        let immutable_descriptor_set = Arc::new(persistent_set);
+        let descriptor_set = Arc::new(persistent_set);
 
         Self {
             vertex_buffer,
-            immutable_descriptor_set,
+            descriptor_set,
+            cpu_buffer,
             z_index,
         }
+    }
+
+    fn set_color(&self, new_color: Vector3<f32>) {
+        let mut write_lock = self.cpu_buffer.write().expect("Couldn't write the buffer");
+        let sprite_data = write_lock.deref_mut();
+
+        sprite_data.color = new_color;
+    }
+
+    fn get_color(&self) -> Vector3<f32> {
+        let read_lock = self.cpu_buffer.read().expect("Couldn't read the buffer");
+        let sprite_data = read_lock.deref();
+
+        sprite_data.color.clone()
+    }
+
+    fn set_global_position(&self, new_position: Vector2<f32>) {
+        let mut write_lock = self.cpu_buffer.write().expect("Couldn't write the buffer");
+        let sprite_data = write_lock.deref_mut();
+
+        sprite_data.global_position = new_position;
+    }
+
+    fn get_global_position(&self) -> Vector2<f32> {
+        let read_lock = self.cpu_buffer.read().expect("Couldn't read the buffer");
+        let sprite_data = read_lock.deref();
+
+        sprite_data.global_position.clone()
     }
 }
 
@@ -115,7 +177,7 @@ impl Draw for Sprite {
             command_buffer,
             self.vertex_buffer.get_vertices(),
             self.vertex_buffer.get_indices(),
-            self.immutable_descriptor_set.clone(),
+            self.descriptor_set.clone(),
         )
     }
 
