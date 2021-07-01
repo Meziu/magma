@@ -230,6 +230,8 @@ impl GraphicsHandler {
                 return;
             }
         }
+
+        // start of the actual loop code
         let (image_num, suboptimal, acquire_future) =
             match swapchain::acquire_next_image(self.get_swapchain().chain.clone(), None) {
                 Ok(r) => r,
@@ -297,8 +299,7 @@ impl GraphicsHandler {
                 self.previous_frame_end = Some(sync::now(self.get_device()).boxed());
             }
         }
-
-        // start of the actual loop code
+        // cleanup
         self.previous_frame_end.as_mut().unwrap().cleanup_finished();
     }
 
