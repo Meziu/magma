@@ -43,7 +43,7 @@ use sdl2::video::{Window, WindowContext};
 // other imports
 use super::draw_objects::{Draw, Sprite};
 use super::sendable::Sendable;
-use cgmath::Vector2;
+use cgmath::{Vector2, Vector4};
 use png;
 
 /// Use of a macro due to literals needed.
@@ -105,8 +105,8 @@ pub type GlobalUniformBuffer = CpuAccessibleBuffer<GlobalUniformData>;
 /// Struct to hold the global data needed for graphics
 #[derive(Clone, Copy)]
 pub struct GlobalUniformData {
-    window_size: Vector2<u32>,
-    camera_position: Vector2<f32>,
+    window_size: Vector4<u32>,
+    camera_position: Vector4<f32>,
 }
 
 /// Struct to handle connections to the Vulkano (and thus Vulkan) API
@@ -181,10 +181,10 @@ impl GraphicsHandler {
         draw_objects.reserve(50);
 
         let window_size = window.size();
-        let window_size = Vector2::new(window_size.0, window_size.1);
+        let window_size = Vector4::new(window_size.0, window_size.1, 0, 0);
 
         let global_uniform_data = GlobalUniformData {
-            camera_position: Vector2::new(0.0, 0.0),
+            camera_position: Vector4::new(0.0, 0.0, 0.0, 0.0),
             window_size,
         };
         let global_uniform_buffer = CpuAccessibleBuffer::from_data(
@@ -213,9 +213,9 @@ impl GraphicsHandler {
             // If the window is being resized, return true, otherwise keep the original value (in case of pending resizes)
             let recreate: bool = {
                 if resized {
+                    self.write_window_size(window.size());
                     true
                 } else {
-                    self.write_window_size(window.size());
                     self.swapchain.get_recreate()
                 }
             };
@@ -230,8 +230,6 @@ impl GraphicsHandler {
                 return;
             }
         }
-        // start of the actual loop code
-        self.previous_frame_end.as_mut().unwrap().cleanup_finished();
         let (image_num, suboptimal, acquire_future) =
             match swapchain::acquire_next_image(self.get_swapchain().chain.clone(), None) {
                 Ok(r) => r,
@@ -299,6 +297,9 @@ impl GraphicsHandler {
                 self.previous_frame_end = Some(sync::now(self.get_device()).boxed());
             }
         }
+
+        // start of the actual loop code
+        self.previous_frame_end.as_mut().unwrap().cleanup_finished();
     }
 
     fn sort_draw_objects(&mut self) {
@@ -333,25 +334,23 @@ impl GraphicsHandler {
     }
 
     pub fn write_window_size(&self, dimensions: (u32, u32)) {
-        let window_size = Vector2::new(dimensions.0, dimensions.1);
+        let window_size = Vector4::new(dimensions.0, dimensions.1, 0, 0);
 
         if let Ok(mut write_lock) = self.global_uniform_buffer.write() {
             let global_data = write_lock.deref_mut();
 
             global_data.window_size = window_size;
         } else {
-            //println!("Couldn't write the buffer");
+            println!("Couldn't write the buffer");
         }
     }
 
     pub fn write_camera_position(&self, new_position: Vector2<f32>) {
-        let mut write_lock = self
-            .global_uniform_buffer
-            .write()
-            .expect("Couldn't write the buffer");
-        let global_data = write_lock.deref_mut();
+        if let Ok(mut write_lock) = self.global_uniform_buffer.write() {
+            let global_data = write_lock.deref_mut();
 
-        global_data.camera_position = new_position;
+            global_data.camera_position = new_position.extend(0.0).extend(0.0);
+        }
     }
 
     pub fn read_camera_position(&self) -> Vector2<f32> {
@@ -361,7 +360,17 @@ impl GraphicsHandler {
             .expect("Couldn't read the buffer");
         let global_data = read_lock.deref();
 
-        global_data.camera_position.clone()
+        global_data.camera_position.clone().truncate().truncate()
+    }
+
+    pub fn read_window_size(&self) -> Vector2<u32> {
+        let read_lock = self
+            .global_uniform_buffer
+            .read()
+            .expect("Couldn't read the buffer");
+        let global_data = read_lock.deref();
+
+        global_data.window_size.clone().truncate().truncate()
     }
 
     pub fn new_vertex_buffer(

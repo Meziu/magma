@@ -15,7 +15,7 @@ use super::draw_objects::Sprite;
 pub struct VideoHandler {
     video_subsystem: VideoSubsystem,
     window: Window,
-    gl_handler: GraphicsHandler,
+    pub gl_handler: GraphicsHandler,
 
     window_resized: bool,
 }
@@ -29,6 +29,7 @@ impl VideoHandler {
             .position_centered()
             .vulkan()
             .resizable()
+            //.fullscreen_desktop()
             .build()
             .expect("Couldn't build SDL2 Window from Video Subsystem");
 

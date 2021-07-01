@@ -7,7 +7,7 @@ use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, ImmutableBuffer, TypedBu
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::descriptor::descriptor_set::collection::DescriptorSetsCollection;
 use vulkano::descriptor::descriptor_set::{
-    PersistentDescriptorSetBuf, PersistentDescriptorSetImg, PersistentDescriptorSetSampler,
+    PersistentDescriptorSetBuf, PersistentDescriptorSetImg, PersistentDescriptorSetSampler, PersistentDescriptorSet,
 };
 use vulkano::image::view::ImageView;
 use vulkano::image::ImmutableImage;
@@ -18,7 +18,7 @@ use vulkano::pipeline::GraphicsPipeline;
 use super::vulkan::{GlobalUniformData, GraphicsHandler, Vertex, VertexArray, VertexBuffer};
 
 // other imports
-use cgmath::{Vector2, Vector3};
+use cgmath::{Vector2, Vector4};
 
 pub trait Draw {
     fn draw(
@@ -57,27 +57,41 @@ impl Draw for PrimitiveShape {
     }
 }
 
-type SpriteImmutableDescriptorSet = vulkano::descriptor::descriptor_set::PersistentDescriptorSet<(
+type SpriteImmutableDescriptorSet = PersistentDescriptorSet<(
     (
         (
             (
                 (),
-                PersistentDescriptorSetImg<Arc<ImageView<Arc<ImmutableImage>>>>,
+                PersistentDescriptorSetImg<
+                    Arc<
+                        ImageView<
+                            Arc<ImmutableImage>,
+                        >,
+                    >,
+                >,
             ),
             PersistentDescriptorSetSampler,
         ),
-        PersistentDescriptorSetBuf<Arc<CpuAccessibleBuffer<SpriteData>>>,
+        PersistentDescriptorSetBuf<
+            Arc<
+                CpuAccessibleBuffer<SpriteData>,
+            >,
+        >,
     ),
-    PersistentDescriptorSetBuf<Arc<CpuAccessibleBuffer<GlobalUniformData>>>,
+    PersistentDescriptorSetBuf<
+        Arc<
+            CpuAccessibleBuffer<GlobalUniformData>,
+        >,
+    >,
 )>;
 
 /// Struct to hold data that both CPU and GPU must access
 #[derive(Copy, Clone, Debug)]
 struct SpriteData {
-    color: Vector3<f32>,
-    global_position: Vector2<f32>,
-    scale: Vector2<f32>,
-    image_dimensions: Vector2<u32>,
+    color: Vector4<f32>,
+    global_position: Vector4<f32>,
+    scale: Vector4<f32>,
+    image_dimensions: Vector4<u32>,
 }
 
 /// Struct to handle sprite entities on screen capable of having transforms
@@ -92,16 +106,16 @@ impl Sprite {
     pub fn new(texture_path: &str, gl_handler: &GraphicsHandler, z_index: u8) -> Self {
         let vao = VertexArray::from(vec![
             Vertex {
-                vert_pos: [-1.0, 1.0],
-            },
-            Vertex {
                 vert_pos: [-1.0, -1.0],
             },
             Vertex {
-                vert_pos: [1.0, -1.0],
+                vert_pos: [-1.0, 1.0],
             },
             Vertex {
                 vert_pos: [1.0, 1.0],
+            },
+            Vertex {
+                vert_pos: [1.0, -1.0],
             },
         ]);
         let indices = gl_handler.new_index_buffer(&[0, 1, 2, 2, 3, 0]);
@@ -110,13 +124,14 @@ impl Sprite {
         let persistent_set = gl_handler.create_empty_descriptor_set_builder("Sprite", 0);
         let sampler = gl_handler.create_texture_sampler();
 
-        let color = Vector3::new(1.0, 1.0, 1.0);
-        let global_position = Vector2::new(0.0, 0.0);
-        let scale = Vector2::new(1.0, 1.0);
+        let color = Vector4::new(1.0, 1.0, 1.0, 1.0);
+        let global_position = Vector4::new(0.0, 0.0, 0.0, 0.0);
+        let scale = Vector4::new(1.0, 1.0, 0.0, 0.0);
 
         let (persistent_set, image_dimensions) =
             gl_handler.create_and_bind_texture(texture_path, persistent_set, sampler.clone());
 
+        let image_dimensions = image_dimensions.extend(0).extend(0);
         let sprite_data = SpriteData {
             global_position,
             color,
@@ -124,11 +139,9 @@ impl Sprite {
             image_dimensions,
         };
 
-        println!("{:#?}", sprite_data);
-
         let cpu_buffer = CpuAccessibleBuffer::from_data(
             gl_handler.get_device(),
-            BufferUsage::uniform_buffer_transfer_destination(),
+            BufferUsage::all(),
             true,
             sprite_data,
         )
@@ -152,39 +165,53 @@ impl Sprite {
         }
     }
 
-    fn set_color(&self, new_color: Vector3<f32>) {
+    pub fn set_color(&self, new_color: Vector4<f32>) {
         let mut write_lock = self.cpu_buffer.write().expect("Couldn't write the buffer");
         let sprite_data = write_lock.deref_mut();
 
         sprite_data.color = new_color;
     }
 
-    fn get_color(&self) -> Vector3<f32> {
+    pub fn get_color(&self) -> Vector4<f32> {
         let read_lock = self.cpu_buffer.read().expect("Couldn't read the buffer");
         let sprite_data = read_lock.deref();
 
         sprite_data.color.clone()
     }
 
-    fn set_global_position(&self, new_position: Vector2<f32>) {
+    pub fn set_global_position(&self, new_position: Vector2<f32>) {
         let mut write_lock = self.cpu_buffer.write().expect("Couldn't write the buffer");
         let sprite_data = write_lock.deref_mut();
 
-        sprite_data.global_position = new_position;
+        sprite_data.global_position = new_position.extend(0.0).extend(0.0);
     }
 
-    fn get_global_position(&self) -> Vector2<f32> {
+    pub fn get_global_position(&self) -> Vector2<f32> {
         let read_lock = self.cpu_buffer.read().expect("Couldn't read the buffer");
         let sprite_data = read_lock.deref();
 
-        sprite_data.global_position.clone()
+        sprite_data.global_position.clone().truncate().truncate()
     }
 
-    fn get_image_dimensions(&self) -> Vector2<u32> {
+    pub fn set_scale(&self, new_scale: Vector2<f32>) {
+        let mut write_lock = self.cpu_buffer.write().expect("Couldn't write the buffer");
+        let sprite_data = write_lock.deref_mut();
+
+        sprite_data.scale = new_scale.extend(0.0).extend(0.0);
+    }
+
+    pub fn get_scale(&self) -> Vector2<f32> {
         let read_lock = self.cpu_buffer.read().expect("Couldn't read the buffer");
         let sprite_data = read_lock.deref();
 
-        sprite_data.image_dimensions.clone()
+        sprite_data.scale.clone().truncate().truncate()
+    }
+
+    pub fn get_image_dimensions(&self) -> Vector2<u32> {
+        let read_lock = self.cpu_buffer.read().expect("Couldn't read the buffer");
+        let sprite_data = read_lock.deref();
+
+        sprite_data.image_dimensions.clone().truncate().truncate()
     }
 }
 

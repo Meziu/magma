@@ -37,12 +37,16 @@ impl Engine {
         // now the order isn't important but the z index must be specified
         self.ctx_handler.video.new_sprite("assets/rust.png", 1);
         self.ctx_handler.video.new_sprite("assets/python.png", 0);
-
+        
         'mainloop: loop {
             self.ctx_handler.check_events();
             if self.ctx_handler.get_break_signal() {
                 break 'mainloop;
             }
+            println!("{:#?}, {:#?}", self.ctx_handler.video.gl_handler.read_window_size(),  self.ctx_handler.video.gl_handler.read_camera_position());
+            
+            self.ctx_handler.video.gl_handler.write_camera_position(cgmath::Vector2::new(0.0, 100.0));
+            
 
             self.ctx_handler.video.update();
 
