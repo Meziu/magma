@@ -6,6 +6,7 @@ use std::fs::File;
 use std::ops::{Deref, DerefMut};
 use std::rc::Rc;
 use std::sync::Arc;
+use std::cell::RefCell;
 
 // Vulkano imports
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, ImmutableBuffer, TypedBufferAccess};
@@ -22,7 +23,7 @@ use vulkano::device::{Device, DeviceExtensions, Queue};
 use vulkano::format::Format;
 use vulkano::image::view::ImageView;
 use vulkano::image::{ImageDimensions, ImageUsage, ImmutableImage, MipmapsCount, SwapchainImage};
-use vulkano::instance::{Instance, InstanceExtensions, PhysicalDevice};
+use vulkano::instance::{Instance, InstanceExtensions, PhysicalDevice, PhysicalDeviceType};
 use vulkano::memory::DeviceMemoryAllocError;
 use vulkano::pipeline::vertex::SingleBufferDefinition;
 use vulkano::pipeline::viewport::Viewport;
@@ -118,7 +119,7 @@ pub struct GraphicsHandler {
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     device: Arc<Device>,
     queue: Arc<Queue>,
-    draw_objects: Vec<Rc<dyn Draw>>,
+    draw_objects: Vec<Rc<RefCell<dyn Draw>>>,
 
     global_uniform_buffer: Arc<GlobalUniformBuffer>,
 }
@@ -258,11 +259,8 @@ impl GraphicsHandler {
             )
             .expect("Couldn't begin Vulkan Render Pass");
 
-        let draw_iter = self.draw_objects.clone();
-        let draw_iter = draw_iter.iter();
-
-        for obj in draw_iter {
-            obj.draw(self, &mut builder);
+        for obj in self.draw_objects.clone() {
+            obj.borrow_mut().draw(self, &mut builder);
         }
 
         builder
@@ -286,8 +284,10 @@ impl GraphicsHandler {
                 image_num,
             )
             .then_signal_fence_and_flush();
+        
         match future {
             Ok(future) => {
+                future.wait(Some(std::time::Duration::from_secs(10))).expect("GPU Timeout, terminating the program");
                 self.previous_frame_end = Some(future.boxed());
             }
             Err(FlushError::OutOfDate) => {
@@ -299,13 +299,14 @@ impl GraphicsHandler {
                 self.previous_frame_end = Some(sync::now(self.get_device()).boxed());
             }
         }
+
         // cleanup
         self.previous_frame_end.as_mut().unwrap().cleanup_finished();
     }
 
     fn sort_draw_objects(&mut self) {
         self.draw_objects
-            .sort_by(|a, b| a.get_z_index().cmp(&b.get_z_index()));
+            .sort_by(|a, b| a.borrow_mut().get_z_index().cmp(&b.borrow_mut().get_z_index()));
     }
 
     pub fn get_swapchain(&mut self) -> &mut SwapchainHandler {
@@ -397,15 +398,15 @@ impl GraphicsHandler {
         buffer
     }
 
-    pub fn new_sprite(&mut self, texture_path: &str, z_index: u8) -> Rc<Sprite> {
-        let sprite = Rc::new(Sprite::new(texture_path, self, z_index));
+    pub fn new_sprite(&mut self, texture_path: &str, z_index: u8) -> Rc<RefCell<Sprite>> {
+        let sprite = Rc::new(RefCell::new(Sprite::new(texture_path, self, z_index)));
 
         self.append_draw_object(sprite.clone());
 
         sprite
     }
 
-    fn append_draw_object(&mut self, obj: Rc<dyn Draw>) {
+    fn append_draw_object(&mut self, obj: Rc<RefCell<dyn Draw>>) {
         self.draw_objects.push(obj);
         self.sort_draw_objects();
     }
@@ -583,6 +584,7 @@ impl From<Vec<Vertex>> for VertexArray {
 }
 
 /// Struct to hold a vertex buffer with data
+#[derive(Clone)]
 pub struct VertexBuffer {
     buffer: Arc<ImmutableBuffer<[Vertex]>>,
     indices: Arc<dyn TypedBufferAccess<Content = [u16]> + Send + Sync>,
@@ -675,26 +677,39 @@ fn get_device<'inst>(
     instance: &'inst Arc<Instance>,
     surface: Arc<Surface<Sendable<Rc<WindowContext>>>>,
 ) -> (PhysicalDevice<'inst>, Arc<Device>, Arc<Queue>) {
-    let physical = PhysicalDevice::enumerate(&instance).next().unwrap();
-    let queue_family = physical
-        .queue_families()
-        .find(|&q| q.supports_graphics() && surface.is_supported(q).unwrap_or(false))
-        .expect("Couldn't generate queue family during Physical Device instancing");
+    let (physical_device, queue_family) = PhysicalDevice::enumerate(&instance)
+        .filter_map(|p| {
+            p.queue_families()
+                .find(|&q| {
+                    q.supports_graphics() && surface.is_supported(q).unwrap_or(false)
+                })
+                .map(|q| (p, q))
+        })
+        .min_by_key(|(p, _)| {
+            match p.properties().device_type.unwrap() {
+                PhysicalDeviceType::DiscreteGpu => 0,
+                PhysicalDeviceType::IntegratedGpu => 1,
+                PhysicalDeviceType::VirtualGpu => 2,
+                PhysicalDeviceType::Cpu => 3,
+                PhysicalDeviceType::Other => 4,
+            }
+        })
+        .unwrap();
 
     let device_ext = DeviceExtensions {
         khr_swapchain: true,
         ..DeviceExtensions::none()
     };
     let (device, mut queues) = Device::new(
-        physical,
-        physical.supported_features(),
+        physical_device,
+        physical_device.supported_features(),
         &device_ext,
         [(queue_family, 0.5)].iter().cloned(),
     )
     .expect("Couldn't create Vulkan Device");
 
     (
-        physical,
+        physical_device,
         device,
         queues.next().expect("Couldn't get first queue object"),
     )

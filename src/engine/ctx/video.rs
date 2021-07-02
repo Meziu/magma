@@ -1,5 +1,6 @@
 // standard imports
 use std::rc::Rc;
+use std::cell::RefCell;
 
 // SDL2 imports
 use sdl2::video::Window;
@@ -49,7 +50,7 @@ impl VideoHandler {
         self.window_resized = new_value;
     }
 
-    pub fn new_sprite(&mut self, texture_path: &str, z_index: u8) -> Rc<Sprite> {
+    pub fn new_sprite(&mut self, texture_path: &str, z_index: u8) -> Rc<RefCell<Sprite>> {
         self.gl_handler.new_sprite(texture_path, z_index)
     }
 
