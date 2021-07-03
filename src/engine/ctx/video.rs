@@ -26,10 +26,10 @@ impl VideoHandler {
         let video_subsystem = ctx.video().expect("Couldn't obtain SDL2 Video Subsystem");
 
         let window = video_subsystem
-            .window("Rust Testing Grounds", 0, 0)
+            .window("Rust Testing Grounds", 800, 600)
             .position_centered()
             .vulkan()
-            .fullscreen_desktop()
+            .resizable()
             .build()
             .expect("Couldn't build SDL2 Window from Video Subsystem");
 

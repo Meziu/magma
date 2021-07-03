@@ -7,7 +7,8 @@ use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, ImmutableBuffer, TypedBu
 use vulkano::command_buffer::{AutoCommandBufferBuilder, PrimaryAutoCommandBuffer};
 use vulkano::descriptor::descriptor_set::collection::DescriptorSetsCollection;
 use vulkano::descriptor::descriptor_set::{
-    PersistentDescriptorSetBuf, PersistentDescriptorSetImg, PersistentDescriptorSetSampler, PersistentDescriptorSet,
+    PersistentDescriptorSet, PersistentDescriptorSetBuf, PersistentDescriptorSetImg,
+    PersistentDescriptorSetSampler,
 };
 use vulkano::image::view::ImageView;
 use vulkano::image::ImmutableImage;
@@ -18,7 +19,15 @@ use vulkano::pipeline::GraphicsPipeline;
 use super::vulkan::{GlobalUniformData, GraphicsHandler, Vertex, VertexArray, VertexBuffer};
 
 // other imports
+use bitflags::bitflags;
 use cgmath::{Vector2, Vector4};
+
+bitflags! {
+    pub struct DrawFlags: u8 {
+        const USED = 0b00000001;
+        const VISIBLE = 0b00000010;
+    }
+}
 
 pub trait Draw {
     fn draw(
@@ -30,10 +39,15 @@ pub trait Draw {
     fn get_z_index(&self) -> u8;
 
     fn flush_data(&self);
+
+    fn get_flags(&mut self) -> &mut DrawFlags;
+
+    fn set_dead(&mut self);
+    fn set_visible(&mut self, visible: bool);
 }
 
 /// Struct for User generated shapes
-/// DO NOT USE, IT'S NOT UPDATED
+/* NOT UPDATED
 pub struct PrimitiveShape {
     vertex_buffer: VertexBuffer,
 }
@@ -61,34 +75,25 @@ impl Draw for PrimitiveShape {
     fn flush_data(&self) {
 
     }
+
+    fn get_flags(&self) {
+
+    }
 }
+*/
 
 type SpriteImmutableDescriptorSet = PersistentDescriptorSet<(
     (
         (
             (
                 (),
-                PersistentDescriptorSetImg<
-                    Arc<
-                        ImageView<
-                            Arc<ImmutableImage>,
-                        >,
-                    >,
-                >,
+                PersistentDescriptorSetImg<Arc<ImageView<Arc<ImmutableImage>>>>,
             ),
             PersistentDescriptorSetSampler,
         ),
-        PersistentDescriptorSetBuf<
-            Arc<
-                CpuAccessibleBuffer<SpriteData>,
-            >,
-        >,
+        PersistentDescriptorSetBuf<Arc<CpuAccessibleBuffer<SpriteData>>>,
     ),
-    PersistentDescriptorSetBuf<
-        Arc<
-            CpuAccessibleBuffer<GlobalUniformData>,
-        >,
-    >,
+    PersistentDescriptorSetBuf<Arc<CpuAccessibleBuffer<GlobalUniformData>>>,
 )>;
 
 /// Struct to hold data that both CPU and GPU must access
@@ -106,7 +111,10 @@ pub struct Sprite {
     vertex_buffer: VertexBuffer,
     descriptor_set: Arc<SpriteImmutableDescriptorSet>,
     cpu_buffer: Arc<CpuAccessibleBuffer<SpriteData>>,
+
+    // flags and params
     z_index: u8,
+    pub sprite_flags: DrawFlags,
 
     pub color: Vector4<f32>,
     pub global_position: Vector2<f32>,
@@ -168,11 +176,15 @@ impl Sprite {
 
         let descriptor_set = Arc::new(persistent_set);
 
+        let mut sprite_flags = DrawFlags::empty();
+        sprite_flags.insert(DrawFlags::USED | DrawFlags::VISIBLE);
+
         Self {
             vertex_buffer,
             descriptor_set,
             cpu_buffer,
             z_index,
+            sprite_flags,
             color,
             image_dimensions,
             scale,
@@ -210,6 +222,18 @@ impl Draw for Sprite {
         sprite_data.scale = self.scale.extend(0.0).extend(0.0);
         // sprite_data.image_dimensions = self.image_dimensions.extend(0).extend(0);
         // image dimensions can't change, maybe with Animated Sprites it could
+    }
+
+    fn get_flags(&mut self) -> &mut DrawFlags {
+        &mut self.sprite_flags
+    }
+
+    fn set_dead(&mut self) {
+        self.sprite_flags.remove(DrawFlags::USED);
+    }
+
+    fn set_visible(&mut self, visible: bool) {
+        self.sprite_flags.set(DrawFlags::VISIBLE, visible);
     }
 }
 

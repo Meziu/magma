@@ -19,6 +19,7 @@ layout(set = 0, binding = 1) uniform readonly SpriteData {
 layout(set = 0, binding = 2) uniform readonly GlobalData {
     uvec4 window_size;
     vec4 camera_position;
+    vec4 camera_scale;
 } global_data;
 
 
@@ -28,7 +29,7 @@ void main() {
 
     vec4 vertex_global_position = sprite_data.global_position + (sprite_data.image_dimensions * vec4(vert_pos, 0.0, 0.0) * sprite_data.scale);
 
-    vec2 rel_position = (vertex_global_position.xy - global_data.camera_position.xy) / global_data.window_size.xy;
+    vec2 rel_position = (vertex_global_position.xy - global_data.camera_position.xy) / (global_data.window_size.xy * global_data.camera_scale.xy);
 
     gl_Position = vec4(rel_position, 0.0, 1.0);
 }

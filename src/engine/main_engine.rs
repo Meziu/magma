@@ -3,7 +3,7 @@ use std::path::Path;
 
 // import the ctx mdule
 use super::ctx::CtxHandler;
-use super::ctx::draw_objects::Draw;
+use super::ctx::draw_objects::{Draw, DrawFlags};
 
 /// Main struct to handle the whole program in all it's components
 pub struct Engine {
@@ -49,11 +49,15 @@ impl Engine {
 
             i += 2.0;
             {
+                self.ctx_handler.video.gl_handler.camera_scale.y = 1.0 - (i / 1000.0);
+
                 let mut sprite = python.borrow_mut();
                 sprite.global_position.x = i;
                 sprite.color = cgmath::Vector4::new(1.0, 1.0, 1.0, 1.0 - (i / 255.0));
                 sprite.flush_data();
             }
+
+
             self.ctx_handler.video.update();
 
             self.ctx_handler.wait();

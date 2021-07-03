@@ -3,7 +3,7 @@ use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fs::File;
-use std::ops::{Deref, DerefMut};
+use std::ops::{DerefMut};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::cell::RefCell;
@@ -42,7 +42,7 @@ use vulkano::VulkanObject;
 use sdl2::video::{Window, WindowContext};
 
 // other imports
-use super::draw_objects::{Draw, Sprite};
+use super::draw_objects::{Draw, Sprite, DrawFlags};
 use super::sendable::Sendable;
 use cgmath::{Vector2, Vector4};
 use png;
@@ -108,6 +108,7 @@ pub type GlobalUniformBuffer = CpuAccessibleBuffer<GlobalUniformData>;
 pub struct GlobalUniformData {
     window_size: Vector4<u32>,
     camera_position: Vector4<f32>,
+    camera_scale: Vector4<f32>
 }
 
 /// Struct to handle connections to the Vulkano (and thus Vulkan) API
@@ -122,6 +123,10 @@ pub struct GraphicsHandler {
     draw_objects: Vec<Rc<RefCell<dyn Draw>>>,
 
     global_uniform_buffer: Arc<GlobalUniformBuffer>,
+    pub window_size: Vector2<u32>,
+    pub camera_position: Vector2<f32>,
+    /// Zoom and stretch the whole view (Fun Fact: if any of the dimensions is negative, it'll revert the view on that dimension)
+    pub camera_scale: Vector2<f32>,
 }
 
 impl GraphicsHandler {
@@ -182,11 +187,14 @@ impl GraphicsHandler {
         draw_objects.reserve(50);
 
         let window_size = window.size();
-        let window_size = Vector4::new(window_size.0, window_size.1, 0, 0);
+        let window_size = Vector2::new(window_size.0, window_size.1);
+        let camera_position = Vector2::new(0.0, 0.0);
+        let camera_scale= Vector2::new(1.0, 1.0);
 
         let global_uniform_data = GlobalUniformData {
-            camera_position: Vector4::new(0.0, 0.0, 0.0, 0.0),
-            window_size,
+            camera_position: camera_position.extend(0.0).extend(0.0),
+            camera_scale: camera_scale.extend(0.0).extend(0.0),
+            window_size: window_size.extend(0).extend(0),
         };
         let global_uniform_buffer = CpuAccessibleBuffer::from_data(
             device.clone(),
@@ -205,16 +213,23 @@ impl GraphicsHandler {
             device,
             queue,
             draw_objects,
+
             global_uniform_buffer,
+            window_size,
+            camera_position,
+            camera_scale,
         }
     }
 
     pub fn vulkan_loop(&mut self, resized: bool, window: &Window) {
+        // flush data into the global uniform buffer
+        self.flush_global_data();
+
         {
             // If the window is being resized, return true, otherwise keep the original value (in case of pending resizes)
             let recreate: bool = {
                 if resized {
-                    self.write_window_size(window.size());
+                    self.window_size = window.size().into();
                     true
                 } else {
                     self.swapchain.get_recreate()
@@ -259,7 +274,7 @@ impl GraphicsHandler {
             )
             .expect("Couldn't begin Vulkan Render Pass");
 
-        for obj in self.draw_objects.clone() {
+        for obj in self.draw_objects.clone().iter().filter(|o| o.borrow_mut().get_flags().contains(DrawFlags::VISIBLE)) {
             obj.borrow_mut().draw(self, &mut builder);
         }
 
@@ -335,44 +350,13 @@ impl GraphicsHandler {
         self.global_uniform_buffer.clone()
     }
 
-    pub fn write_window_size(&self, dimensions: (u32, u32)) {
-        let window_size = Vector4::new(dimensions.0, dimensions.1, 0, 0);
+    pub fn flush_global_data(&self) {
+        let mut write_lock = self.global_uniform_buffer.write().expect("Couldn't write global GPU buffer"); 
+        let global_data = write_lock.deref_mut();
 
-        if let Ok(mut write_lock) = self.global_uniform_buffer.write() {
-            let global_data = write_lock.deref_mut();
-
-            global_data.window_size = window_size;
-        } else {
-            println!("Couldn't write the buffer");
-        }
-    }
-
-    pub fn write_camera_position(&self, new_position: Vector2<f32>) {
-        if let Ok(mut write_lock) = self.global_uniform_buffer.write() {
-            let global_data = write_lock.deref_mut();
-
-            global_data.camera_position = new_position.extend(0.0).extend(0.0);
-        }
-    }
-
-    pub fn read_camera_position(&self) -> Vector2<f32> {
-        let read_lock = self
-            .global_uniform_buffer
-            .read()
-            .expect("Couldn't read the buffer");
-        let global_data = read_lock.deref();
-
-        global_data.camera_position.clone().truncate().truncate()
-    }
-
-    pub fn read_window_size(&self) -> Vector2<u32> {
-        let read_lock = self
-            .global_uniform_buffer
-            .read()
-            .expect("Couldn't read the buffer");
-        let global_data = read_lock.deref();
-
-        global_data.window_size.clone().truncate().truncate()
+        global_data.window_size = self.window_size.extend(0).extend(0);
+        global_data.camera_position = self.camera_position.extend(0.0).extend(0.0);
+        global_data.camera_scale = self.camera_scale.extend(0.0).extend(0.0);
     }
 
     pub fn new_vertex_buffer(

@@ -10,6 +10,7 @@ vulkano-shaders = "0.24.0"
 ash = "0.32.1"
 png = "0.16.8"
 cgmath = "0.18.0"
+flags = "0.1.5"
 
 [dependencies.sdl2]
 version = "0.34.5"
