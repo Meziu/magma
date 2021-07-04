@@ -274,7 +274,7 @@ impl GraphicsHandler {
             )
             .expect("Couldn't begin Vulkan Render Pass");
 
-        for obj in self.draw_objects.clone().iter().filter(|o| o.borrow_mut().get_flags().contains(DrawFlags::VISIBLE)) {
+        for obj in self.draw_objects.clone().iter().filter(|o| o.borrow().read_flags().contains(DrawFlags::VISIBLE)) {
             obj.borrow_mut().draw(self, &mut builder);
         }
 

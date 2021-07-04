@@ -40,7 +40,8 @@ pub trait Draw {
 
     fn flush_data(&self);
 
-    fn get_flags(&mut self) -> &mut DrawFlags;
+    fn write_flags(&mut self) -> &mut DrawFlags;
+    fn read_flags(&self) -> DrawFlags;
 
     fn set_dead(&mut self);
     fn set_visible(&mut self, visible: bool);
@@ -224,8 +225,12 @@ impl Draw for Sprite {
         // image dimensions can't change, maybe with Animated Sprites it could
     }
 
-    fn get_flags(&mut self) -> &mut DrawFlags {
+    fn write_flags(&mut self) -> &mut DrawFlags {
         &mut self.sprite_flags
+    }
+
+    fn read_flags(&self) -> DrawFlags {
+        self.sprite_flags
     }
 
     fn set_dead(&mut self) {
