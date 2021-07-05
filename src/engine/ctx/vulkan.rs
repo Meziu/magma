@@ -42,7 +42,7 @@ use vulkano::VulkanObject;
 use sdl2::video::{Window, WindowContext};
 
 // other imports
-use super::draw_objects::{Draw, DrawFlags, DrawObject, Sprite};
+use super::draw_objects::{Draw, DrawFlags, DrawObject, SpriteObject, Sprite};
 use super::sendable::Sendable;
 use cgmath::{Vector2, Vector4};
 use png;
@@ -396,10 +396,12 @@ impl GraphicsHandler {
         buffer
     }
 
-    pub fn new_sprite(&mut self, texture_path: &str, z_index: u8) -> DrawObject<Sprite> {
+    pub fn new_sprite(&mut self, texture_path: &str, z_index: u8) -> SpriteObject {
         let sprite = Rc::new(RefCell::new(Sprite::new(texture_path, self, z_index)));
 
         self.append_draw_object(sprite.clone());
+
+        let sprite = SpriteObject::new(sprite);
 
         sprite
     }

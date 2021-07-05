@@ -37,7 +37,9 @@ impl Engine {
         // before, z index wasn't sorted and depth depended on the order in the vector
         // now the order isn't important but the z index must be specified
         let _ferris = self.ctx_handler.video.new_sprite("assets/rust.png", 0);
+        {
         let python = self.ctx_handler.video.new_sprite("assets/python.png", 1);
+        }
 
         let mut i = 0.0;
         'mainloop: loop {
@@ -50,11 +52,11 @@ impl Engine {
             {
                 self.ctx_handler.video.gl_handler.camera_scale.y = 1.0 - (i / 1000.0);
 
-                let mut sprite = python.borrow_mut();
-                sprite.set_dead();
+                /*
+                let mut sprite = python.get_mut();
                 sprite.global_position.x = i;
                 sprite.color = cgmath::Vector4::new(1.0, 1.0, 1.0, 1.0 - (i / 255.0));
-                sprite.flush_data();
+                sprite.flush_data();*/
             }
 
             self.ctx_handler.video.update();

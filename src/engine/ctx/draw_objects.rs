@@ -3,6 +3,7 @@ use std::cell::RefCell;
 use std::ops::DerefMut;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::cell::{Ref, RefMut};
 
 // vulkan imports
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, ImmutableBuffer, TypedBufferAccess};
@@ -204,6 +205,33 @@ impl Draw for Sprite {
 
     fn set_visible(&mut self, visible: bool) {
         self.sprite_flags.set(DrawFlags::VISIBLE, visible);
+    }
+}
+
+/// User Accessible DrawObject for the Sprites
+pub struct SpriteObject {
+    draw_object: DrawObject<Sprite>,
+}
+
+impl SpriteObject {
+    pub fn new(draw_object: DrawObject<Sprite>) -> Self {
+        Self {
+            draw_object,
+        }
+    }
+
+    pub fn get_ref(&self) -> Ref<'_, Sprite> {
+        self.draw_object.borrow()
+    }
+
+    pub fn get_mut(&self) -> RefMut<'_, Sprite> {
+        self.draw_object.borrow_mut()
+    }
+}
+
+impl Drop for SpriteObject {
+    fn drop(&mut self) {
+        self.draw_object.borrow_mut().set_dead();
     }
 }
 
