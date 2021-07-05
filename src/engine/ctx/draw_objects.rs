@@ -120,7 +120,7 @@ pub struct Sprite {
     pub color: Vector4<f32>,
     pub global_position: Vector2<f32>,
     pub scale: Vector2<f32>,
-    pub image_dimensions: Vector2<u32>,
+    image_dimensions: Vector2<u32>,
 }
 
 impl Sprite {
@@ -221,8 +221,6 @@ impl Draw for Sprite {
         sprite_data.color = self.color;
         sprite_data.global_position = self.global_position.extend(0.0).extend(0.0);
         sprite_data.scale = self.scale.extend(0.0).extend(0.0);
-        // sprite_data.image_dimensions = self.image_dimensions.extend(0).extend(0);
-        // image dimensions can't change, maybe with Animated Sprites it could
     }
 
     fn write_flags(&mut self) -> &mut DrawFlags {
