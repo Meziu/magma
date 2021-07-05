@@ -1,6 +1,4 @@
 // standard imports
-use std::rc::Rc;
-use std::cell::RefCell;
 
 // SDL2 imports
 use sdl2::video::Window;
@@ -10,7 +8,7 @@ use sdl2::{Sdl, VideoSubsystem};
 use super::vulkan::GraphicsHandler;
 
 // other imports
-use super::draw_objects::Sprite;
+use super::draw_objects::{DrawObject, Sprite};
 
 /// Component of the CtxHandler to handle all calls to graphic APIs
 pub struct VideoHandler {
@@ -50,7 +48,7 @@ impl VideoHandler {
         self.window_resized = new_value;
     }
 
-    pub fn new_sprite(&mut self, texture_path: &str, z_index: u8) -> Rc<RefCell<Sprite>> {
+    pub fn new_sprite(&mut self, texture_path: &str, z_index: u8) -> DrawObject<Sprite> {
         self.gl_handler.new_sprite(texture_path, z_index)
     }
 

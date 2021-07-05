@@ -1,5 +1,7 @@
 // standard imports
+use std::cell::RefCell;
 use std::ops::DerefMut;
+use std::rc::Rc;
 use std::sync::Arc;
 
 // vulkan imports
@@ -47,42 +49,7 @@ pub trait Draw {
     fn set_visible(&mut self, visible: bool);
 }
 
-/// Struct for User generated shapes
-/* NOT UPDATED
-pub struct PrimitiveShape {
-    vertex_buffer: VertexBuffer,
-}
-
-impl Draw for PrimitiveShape {
-    fn draw(
-        &self,
-        gl_handler: &mut GraphicsHandler,
-        command_buffer: &mut AutoCommandBufferBuilder<PrimaryAutoCommandBuffer>,
-    ) {
-        draw(
-            gl_handler,
-            gl_handler.get_pipeline("Primitive"),
-            command_buffer,
-            self.vertex_buffer.get_vertices(),
-            self.vertex_buffer.get_indices(),
-            (),
-        )
-    }
-
-    fn get_z_index(&self) -> u8 {
-        0
-    }
-
-    fn flush_data(&self) {
-
-    }
-
-    fn get_flags(&self) {
-
-    }
-}
-*/
-
+pub type DrawObject<O> = Rc<RefCell<O>>;
 type SpriteImmutableDescriptorSet = PersistentDescriptorSet<(
     (
         (

@@ -1,12 +1,12 @@
 // standard imports
+use std::cell::RefCell;
 use std::cmp::{max, min};
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fs::File;
-use std::ops::{DerefMut};
+use std::ops::DerefMut;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::cell::RefCell;
 
 // Vulkano imports
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, ImmutableBuffer, TypedBufferAccess};
@@ -42,7 +42,7 @@ use vulkano::VulkanObject;
 use sdl2::video::{Window, WindowContext};
 
 // other imports
-use super::draw_objects::{Draw, Sprite, DrawFlags};
+use super::draw_objects::{Draw, DrawFlags, DrawObject, Sprite};
 use super::sendable::Sendable;
 use cgmath::{Vector2, Vector4};
 use png;
@@ -108,7 +108,7 @@ pub type GlobalUniformBuffer = CpuAccessibleBuffer<GlobalUniformData>;
 pub struct GlobalUniformData {
     window_size: Vector4<u32>,
     camera_position: Vector4<f32>,
-    camera_scale: Vector4<f32>
+    camera_scale: Vector4<f32>,
 }
 
 /// Struct to handle connections to the Vulkano (and thus Vulkan) API
@@ -120,12 +120,12 @@ pub struct GraphicsHandler {
     previous_frame_end: Option<Box<dyn GpuFuture>>,
     device: Arc<Device>,
     queue: Arc<Queue>,
-    draw_objects: Vec<Rc<RefCell<dyn Draw>>>,
+    draw_objects: Vec<DrawObject<dyn Draw>>,
 
     global_uniform_buffer: Arc<GlobalUniformBuffer>,
     pub window_size: Vector2<u32>,
     pub camera_position: Vector2<f32>,
-    /// Zoom and stretch the whole view (Fun Fact: if any of the dimensions is negative, it'll revert the view on that dimension)
+    /// Zoom and stretch the whole view (If any of the dimensions is negative, it'll revert the view on that dimension)
     pub camera_scale: Vector2<f32>,
 }
 
@@ -189,7 +189,7 @@ impl GraphicsHandler {
         let window_size = window.size();
         let window_size = Vector2::new(window_size.0, window_size.1);
         let camera_position = Vector2::new(0.0, 0.0);
-        let camera_scale= Vector2::new(1.0, 1.0);
+        let camera_scale = Vector2::new(1.0, 1.0);
 
         let global_uniform_data = GlobalUniformData {
             camera_position: camera_position.extend(0.0).extend(0.0),
@@ -274,7 +274,14 @@ impl GraphicsHandler {
             )
             .expect("Couldn't begin Vulkan Render Pass");
 
-        for obj in self.draw_objects.clone().iter().filter(|o| o.borrow().read_flags().contains(DrawFlags::VISIBLE)) {
+        self.draw_objects
+            .retain(|o| o.borrow().read_flags().contains(DrawFlags::USED));
+
+        let cloned_list = self.draw_objects.clone();
+        for obj in cloned_list
+            .iter()
+            .filter(|o| o.borrow().read_flags().contains(DrawFlags::VISIBLE))
+        {
             obj.borrow_mut().draw(self, &mut builder);
         }
 
@@ -299,10 +306,11 @@ impl GraphicsHandler {
                 image_num,
             )
             .then_signal_fence_and_flush();
-        
         match future {
             Ok(future) => {
-                future.wait(Some(std::time::Duration::from_secs(10))).expect("GPU Timeout, terminating the program");
+                future
+                    .wait(Some(std::time::Duration::from_secs(10)))
+                    .expect("GPU Timeout, terminating the program");
                 self.previous_frame_end = Some(future.boxed());
             }
             Err(FlushError::OutOfDate) => {
@@ -320,8 +328,11 @@ impl GraphicsHandler {
     }
 
     fn sort_draw_objects(&mut self) {
-        self.draw_objects
-            .sort_by(|a, b| a.borrow_mut().get_z_index().cmp(&b.borrow_mut().get_z_index()));
+        self.draw_objects.sort_by(|a, b| {
+            a.borrow_mut()
+                .get_z_index()
+                .cmp(&b.borrow_mut().get_z_index())
+        });
     }
 
     pub fn get_swapchain(&mut self) -> &mut SwapchainHandler {
@@ -351,7 +362,10 @@ impl GraphicsHandler {
     }
 
     pub fn flush_global_data(&self) {
-        let mut write_lock = self.global_uniform_buffer.write().expect("Couldn't write global GPU buffer"); 
+        let mut write_lock = self
+            .global_uniform_buffer
+            .write()
+            .expect("Couldn't write global GPU buffer");
         let global_data = write_lock.deref_mut();
 
         global_data.window_size = self.window_size.extend(0).extend(0);
@@ -382,7 +396,7 @@ impl GraphicsHandler {
         buffer
     }
 
-    pub fn new_sprite(&mut self, texture_path: &str, z_index: u8) -> Rc<RefCell<Sprite>> {
+    pub fn new_sprite(&mut self, texture_path: &str, z_index: u8) -> DrawObject<Sprite> {
         let sprite = Rc::new(RefCell::new(Sprite::new(texture_path, self, z_index)));
 
         self.append_draw_object(sprite.clone());
@@ -390,7 +404,7 @@ impl GraphicsHandler {
         sprite
     }
 
-    fn append_draw_object(&mut self, obj: Rc<RefCell<dyn Draw>>) {
+    fn append_draw_object(&mut self, obj: DrawObject<dyn Draw>) {
         self.draw_objects.push(obj);
         self.sort_draw_objects();
     }
@@ -664,19 +678,15 @@ fn get_device<'inst>(
     let (physical_device, queue_family) = PhysicalDevice::enumerate(&instance)
         .filter_map(|p| {
             p.queue_families()
-                .find(|&q| {
-                    q.supports_graphics() && surface.is_supported(q).unwrap_or(false)
-                })
+                .find(|&q| q.supports_graphics() && surface.is_supported(q).unwrap_or(false))
                 .map(|q| (p, q))
         })
-        .min_by_key(|(p, _)| {
-            match p.properties().device_type.unwrap() {
-                PhysicalDeviceType::DiscreteGpu => 0,
-                PhysicalDeviceType::IntegratedGpu => 1,
-                PhysicalDeviceType::VirtualGpu => 2,
-                PhysicalDeviceType::Cpu => 3,
-                PhysicalDeviceType::Other => 4,
-            }
+        .min_by_key(|(p, _)| match p.properties().device_type.unwrap() {
+            PhysicalDeviceType::DiscreteGpu => 0,
+            PhysicalDeviceType::IntegratedGpu => 1,
+            PhysicalDeviceType::VirtualGpu => 2,
+            PhysicalDeviceType::Cpu => 3,
+            PhysicalDeviceType::Other => 4,
         })
         .unwrap();
 
