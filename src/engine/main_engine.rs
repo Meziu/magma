@@ -2,7 +2,6 @@
 use std::path::Path;
 
 // import the ctx mdule
-use super::ctx::draw_objects::Draw;
 use super::ctx::CtxHandler;
 
 /// Main struct to handle the whole program in all it's components
@@ -38,7 +37,7 @@ impl Engine {
         // now the order isn't important but the z index must be specified
         let _ferris = self.ctx_handler.video.new_sprite("assets/rust.png", 0);
         {
-        let python = self.ctx_handler.video.new_sprite("assets/python.png", 1);
+            let python = self.ctx_handler.video.new_sprite("assets/python.png", 1);
         }
 
         let mut i = 0.0;

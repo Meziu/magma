@@ -51,6 +51,9 @@ pub trait Draw {
 }
 
 pub type DrawObject<O> = Rc<RefCell<O>>;
+
+pub type SpriteObject = GraphicObject<Sprite>;
+
 type SpriteImmutableDescriptorSet = PersistentDescriptorSet<(
     (
         (
@@ -208,28 +211,28 @@ impl Draw for Sprite {
     }
 }
 
-/// User Accessible DrawObject for the Sprites
-pub struct SpriteObject {
-    draw_object: DrawObject<Sprite>,
+/// User Accessible DrawObject dependent on the draw type
+pub struct GraphicObject<O: Draw + ?Sized> {
+    draw_object: DrawObject<O>,
 }
 
-impl SpriteObject {
-    pub fn new(draw_object: DrawObject<Sprite>) -> Self {
+impl<O: Draw + ?Sized> GraphicObject<O> {
+    pub fn new(draw_object: DrawObject<O>) -> Self {
         Self {
             draw_object,
         }
     }
 
-    pub fn get_ref(&self) -> Ref<'_, Sprite> {
+    pub fn get_ref(&self) -> Ref<'_, O> {
         self.draw_object.borrow()
     }
 
-    pub fn get_mut(&self) -> RefMut<'_, Sprite> {
+    pub fn get_mut(&self) -> RefMut<'_, O> {
         self.draw_object.borrow_mut()
     }
 }
 
-impl Drop for SpriteObject {
+impl<O: Draw + ?Sized> Drop for GraphicObject<O> {
     fn drop(&mut self) {
         self.draw_object.borrow_mut().set_dead();
     }
