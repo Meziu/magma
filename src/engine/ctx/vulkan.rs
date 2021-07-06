@@ -42,7 +42,7 @@ use vulkano::VulkanObject;
 use sdl2::video::{Window, WindowContext};
 
 // other imports
-use super::draw_objects::{Draw, DrawFlags, DrawObject, SpriteObject, Sprite};
+use super::draw_objects::{Draw, DrawFlags, DrawObject, Sprite, SpriteObject};
 use super::sendable::Sendable;
 use cgmath::{Vector2, Vector4};
 use png;
@@ -221,10 +221,19 @@ impl GraphicsHandler {
         }
     }
 
+    /// Rendering function to call every frame
     pub fn vulkan_loop(&mut self, resized: bool, window: &Window) {
-        // flush data into the global uniform buffer
-        self.flush_global_data();
+        // Update the render object list and flush all the data to the gpu
+        {
+            self.draw_objects
+                .retain(|o| o.borrow().read_flags().contains(DrawFlags::USED));
+            self.flush_global_data();
+            for o in &self.draw_objects {
+                o.borrow().flush_data();
+            }
+        }
 
+        // Check the window resize and make new framebuffers if needed
         {
             // If the window is being resized, return true, otherwise keep the original value (in case of pending resizes)
             let recreate: bool = {
@@ -247,7 +256,9 @@ impl GraphicsHandler {
             }
         }
 
-        // start of the actual loop code
+        // START OF THE ACTUAL LOOP
+
+        // Get the future image
         let (image_num, suboptimal, acquire_future) =
             match swapchain::acquire_next_image(self.get_swapchain().chain.clone(), None) {
                 Ok(r) => r,
@@ -259,6 +270,7 @@ impl GraphicsHandler {
             };
         self.get_swapchain().set_recreate(suboptimal);
 
+        // Create Command Buffer for draw calls
         let mut builder = AutoCommandBufferBuilder::primary(
             self.get_device(),
             self.queue.family(),
@@ -266,6 +278,7 @@ impl GraphicsHandler {
         )
         .expect("Couldn't build Vulkan AutoCommandBuffer");
 
+        // Initialize Command Buffer with the Render Pass
         builder
             .begin_render_pass(
                 self.get_swapchain().framebuffers[image_num].clone(),
@@ -274,25 +287,25 @@ impl GraphicsHandler {
             )
             .expect("Couldn't begin Vulkan Render Pass");
 
-        self.draw_objects
-            .retain(|o| o.borrow().read_flags().contains(DrawFlags::USED));
-
+        // Filter all visible DrawObjects
         let cloned_list = self.draw_objects.clone();
         for obj in cloned_list
             .iter()
             .filter(|o| o.borrow().read_flags().contains(DrawFlags::VISIBLE))
         {
+            // Draw object if visible
             obj.borrow_mut().draw(self, &mut builder);
         }
 
+        // Build Command Buffer
         builder
             .end_render_pass()
             .expect("Couldn't properly end Vulkan Render Pass");
-
         let command_buffer = builder
             .build()
             .expect("Couldn't build Vulkan Command Buffer");
 
+        // Run Command Buffer and obtain Future
         let future = self
             .previous_frame_end
             .take()
@@ -306,27 +319,33 @@ impl GraphicsHandler {
                 image_num,
             )
             .then_signal_fence_and_flush();
+
+        // Check the Future's output
         match future {
             Ok(future) => {
+                // If the GPU is stuck rendering for too long terminate the program
                 future
                     .wait(Some(std::time::Duration::from_secs(10)))
                     .expect("GPU Timeout, terminating the program");
                 self.previous_frame_end = Some(future.boxed());
             }
+            // Not a real error, may happen with weird Window resizing
             Err(FlushError::OutOfDate) => {
                 self.get_swapchain().set_recreate(true);
                 self.previous_frame_end = Some(sync::now(self.get_device()).boxed());
             }
+            // Couldn't flush the future, big problem, pls fix yourself
             Err(e) => {
                 eprintln!("Failed to flush Vulkan Future: {:?}", e);
                 self.previous_frame_end = Some(sync::now(self.get_device()).boxed());
             }
         }
 
-        // cleanup
+        // Clean the GpuFuture (unlock blocked memory and free remainings)
         self.previous_frame_end.as_mut().unwrap().cleanup_finished();
     }
 
+    /// Sorter for the DrawObjects
     fn sort_draw_objects(&mut self) {
         self.draw_objects.sort_by(|a, b| {
             a.borrow_mut()
@@ -335,14 +354,17 @@ impl GraphicsHandler {
         });
     }
 
+    /// Getter for the used Swapchain
     pub fn get_swapchain(&mut self) -> &mut SwapchainHandler {
         &mut self.swapchain
     }
 
+    /// Getter for the used Device
     pub fn get_device(&self) -> Arc<Device> {
         self.device.clone()
     }
 
+    /// Getter for a specific pipeline with a name
     pub fn get_pipeline(
         &self,
         name: &str,
@@ -353,15 +375,18 @@ impl GraphicsHandler {
             .clone()
     }
 
-    pub fn get_queue(&self) -> Arc<Queue> {
+    /// Getter for the Vulkan Queue
+    fn get_queue(&self) -> Arc<Queue> {
         self.queue.clone()
     }
 
+    /// Getter for the global uniform buffer
     pub fn get_global_uniform_buffer(&self) -> Arc<GlobalUniformBuffer> {
         self.global_uniform_buffer.clone()
     }
 
-    pub fn flush_global_data(&self) {
+    /// Flusher for the global uniform buffer
+    fn flush_global_data(&self) {
         let mut write_lock = self
             .global_uniform_buffer
             .write()
@@ -373,6 +398,7 @@ impl GraphicsHandler {
         global_data.camera_scale = self.camera_scale.extend(0.0).extend(0.0);
     }
 
+    /// Create a new Immutable Vertex Buffer
     pub fn new_vertex_buffer(
         &self,
         vao: VertexArray,
@@ -382,6 +408,7 @@ impl GraphicsHandler {
             .expect("Device Memory Allocation Error during creation of new Vertex Buffer")
     }
 
+    /// Create a new Immutable Index Buffer (used to order the vertices on drawing)
     pub fn new_index_buffer(
         &self,
         indices: &[u16],
@@ -396,6 +423,7 @@ impl GraphicsHandler {
         buffer
     }
 
+    /// Create a new SpriteObject
     pub fn new_sprite(&mut self, texture_path: &str, z_index: u8) -> SpriteObject {
         let sprite = Rc::new(RefCell::new(Sprite::new(texture_path, self, z_index)));
 
@@ -406,11 +434,13 @@ impl GraphicsHandler {
         sprite
     }
 
+    /// Append a new DrawObject to the draw_object vector for draw
     fn append_draw_object(&mut self, obj: DrawObject<dyn Draw>) {
         self.draw_objects.push(obj);
         self.sort_draw_objects();
     }
 
+    /// Create a new empty Immutable Descriptor Set
     pub fn create_empty_descriptor_set_builder(
         &self,
         pipeline_name: &str,
@@ -424,6 +454,7 @@ impl GraphicsHandler {
         PersistentDescriptorSet::start(layout.clone())
     }
 
+    /// Bind a texture to a new Immutable Descriptor Set
     pub fn create_and_bind_texture<R>(
         &self,
         texture_path: &str,
@@ -470,6 +501,7 @@ impl GraphicsHandler {
         )
     }
 
+    /// Create a Texture Sampler to bind Textures to
     pub fn create_texture_sampler(&self) -> Arc<Sampler> {
         Sampler::new(
             self.get_device(),

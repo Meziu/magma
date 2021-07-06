@@ -1,9 +1,9 @@
 // standard imports
 use std::cell::RefCell;
+use std::cell::{Ref, RefMut};
 use std::ops::DerefMut;
 use std::rc::Rc;
 use std::sync::Arc;
-use std::cell::{Ref, RefMut};
 
 // vulkan imports
 use vulkano::buffer::{BufferUsage, CpuAccessibleBuffer, ImmutableBuffer, TypedBufferAccess};
@@ -218,9 +218,7 @@ pub struct GraphicObject<O: Draw + ?Sized> {
 
 impl<O: Draw + ?Sized> GraphicObject<O> {
     pub fn new(draw_object: DrawObject<O>) -> Self {
-        Self {
-            draw_object,
-        }
+        Self { draw_object }
     }
 
     pub fn get_ref(&self) -> Ref<'_, O> {
