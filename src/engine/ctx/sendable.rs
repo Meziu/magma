@@ -10,7 +10,7 @@ unsafe impl<T> Sync for Sendable<T> {}
 
 impl<T> Sendable<T> {
     pub fn new(data: T) -> Sendable<T> {
-        Sendable {data: data, thread: thread::current().id()}
+        Sendable {data, thread: thread::current().id()}
     }
 
     pub fn get(&self) -> Option<&T> {

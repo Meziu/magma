@@ -24,7 +24,9 @@ impl CtxHandler {
     pub fn new() -> CtxHandler {
         let ctx = sdl2::init().expect("Couldn't init SDL2 context");
 
-        let event_pump = ctx.event_pump().expect("Couldn't obtain Event Pump from SDL2 context");
+        let event_pump = ctx
+            .event_pump()
+            .expect("Couldn't obtain Event Pump from SDL2 context");
 
         let video = VideoHandler::new(&ctx);
         let audio = AudioHandler::new();
@@ -47,10 +49,11 @@ impl CtxHandler {
         for event in self.event_pump.poll_iter() {
             match event {
                 Event::Quit { .. } => self.must_break = true,
-                Event::Window { win_event, .. } => {
-                    if let WindowEvent::Resized(_, _) = win_event {
-                        self.video.set_window_resized(true);
-                    }
+                Event::Window {
+                    win_event: WindowEvent::Resized(_, _),
+                    ..
+                } => {
+                    self.video.set_window_resized(true);
                 }
                 _ => {}
             }

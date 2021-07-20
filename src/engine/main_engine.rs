@@ -19,10 +19,10 @@ impl Engine {
 
     /// Main function to run the program
     pub fn run(&mut self) {
-        if let Ok(_) = self
+        if self
             .ctx_handler
             .audio
-            .music_from_file(Path::new("assets/example.ogg"))
+            .music_from_file(Path::new("assets/example.ogg")).is_ok()
         {
             println!("Music was loaded fine!");
             match self.ctx_handler.audio.music_play(-1) {
@@ -58,5 +58,11 @@ impl Engine {
 
             self.ctx_handler.wait();
         }
+    }
+}
+
+impl Default for Engine {
+    fn default() -> Self {
+        Self::new()
     }
 }

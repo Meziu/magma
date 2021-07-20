@@ -92,15 +92,9 @@ macro_rules! create_pipeline {
 }
 
 pub type Texture = Arc<ImageView<Arc<ImmutableImage>>>;
-pub type ImageDescriptorSet = Arc<
-    PersistentDescriptorSet<(
-        (
-            (),
-            PersistentDescriptorSetImg<Arc<ImageView<Arc<ImmutableImage>>>>,
-        ),
-        PersistentDescriptorSetSampler,
-    )>,
->;
+pub type DescriptorSetImg = PersistentDescriptorSetImg<Arc<ImageView<Arc<ImmutableImage>>>>;
+pub type DescriptorSetWithImage<R> =
+    PersistentDescriptorSetBuilder<((R, DescriptorSetImg), PersistentDescriptorSetSampler)>;
 pub type GlobalUniformBuffer = CpuAccessibleBuffer<GlobalUniformData>;
 
 /// Struct to hold the global data needed for graphics
@@ -139,8 +133,7 @@ impl GraphicsHandler {
         // Get the device info and queue
         let (physical, device, queue) = get_device(&instance, surface.clone());
 
-        let (swapchain, images) =
-            create_raw_swapchain(window, device.clone(), surface.clone(), physical);
+        let (swapchain, images) = create_raw_swapchain(window, device.clone(), surface, physical);
 
         let render_pass = Arc::new(
             vulkano::single_pass_renderpass!(
@@ -164,22 +157,22 @@ impl GraphicsHandler {
         let mut pipelines = HashMap::new();
         create_pipeline!(
             "Primitive",
-            device.clone(),
-            render_pass.clone(),
+            device,
+            render_pass,
             "assets/shaders/primitive.vert",
             "assets/shaders/primitive.frag",
             &mut pipelines
         );
         create_pipeline!(
             "Sprite",
-            device.clone(),
-            render_pass.clone(),
+            device,
+            render_pass,
             "assets/shaders/sprite.vert",
             "assets/shaders/sprite.frag",
             &mut pipelines
         );
 
-        let swapchain = SwapchainHandler::new(swapchain.clone(), images, render_pass.clone());
+        let swapchain = SwapchainHandler::new(swapchain, images, render_pass.clone());
 
         let previous_frame_end = Some(sync::now(device.clone()).boxed());
 
@@ -205,9 +198,9 @@ impl GraphicsHandler {
         .unwrap();
 
         Self {
-            instance: instance.clone(),
+            instance,
             swapchain,
-            render_pass: render_pass.clone(),
+            render_pass,
             pipelines,
             previous_frame_end,
             device,
@@ -251,7 +244,7 @@ impl GraphicsHandler {
             let swapchain = self.get_swapchain();
 
             // Not an actual error, just a way to signify the need to retry the procedure
-            if let Err(_) = swapchain.check_and_recreate(window, pass) {
+            if swapchain.check_and_recreate(window, pass).is_err() {
                 return;
             }
         }
@@ -429,9 +422,7 @@ impl GraphicsHandler {
 
         self.append_draw_object(sprite.clone());
 
-        let sprite = SpriteObject::new(sprite);
-
-        sprite
+        SpriteObject::new(sprite)
     }
 
     /// Append a new DrawObject to the draw_object vector for draw
@@ -461,13 +452,7 @@ impl GraphicsHandler {
         desc_set_builder: PersistentDescriptorSetBuilder<R>,
         sampler: Arc<Sampler>,
     ) -> (
-        PersistentDescriptorSetBuilder<(
-            (
-                R,
-                PersistentDescriptorSetImg<Arc<ImageView<Arc<ImmutableImage>>>>,
-            ),
-            PersistentDescriptorSetSampler,
-        )>,
+        DescriptorSetWithImage<R>,
         Vector2<u32>,
     ) {
         let decoder = png::Decoder::new(File::open(texture_path).unwrap());
@@ -484,7 +469,7 @@ impl GraphicsHandler {
         };
         let (image, future) = ImmutableImage::from_iter(
             buf.iter().cloned(),
-            dimensions.clone(),
+            dimensions,
             MipmapsCount::One,
             Format::R8G8B8A8Srgb,
             self.get_queue(),
@@ -545,11 +530,11 @@ impl SwapchainHandler {
         });
 
         let framebuffers =
-            window_size_dependent_setup(&images[..], render_pass.clone(), dynamic_state.as_mut());
+            window_size_dependent_setup(&images[..], render_pass, dynamic_state.as_mut());
 
         Self {
             chain: swapchain,
-            images: images,
+            images,
             framebuffers,
             must_recreate: false,
             dynamic_state,
@@ -573,11 +558,8 @@ impl SwapchainHandler {
             self.chain = new_swapchain;
             self.images = new_images;
 
-            let framebuffers = window_size_dependent_setup(
-                &self.images[..],
-                pass.clone(),
-                &mut self.dynamic_state,
-            );
+            let framebuffers =
+                window_size_dependent_setup(&self.images[..], pass, &mut self.dynamic_state);
             self.framebuffers = framebuffers;
             self.must_recreate = false;
         }
@@ -698,17 +680,17 @@ fn create_surface(
     // Use the SDL2 surface from the Window as surface
     unsafe {
         Arc::new(Surface::from_raw_surface(
-            instance.clone(),
+            instance,
             ash::vk::SurfaceKHR::from_raw(surface_handle),
             Sendable::new(window.context()),
         ))
     }
 }
 
-fn get_device<'inst>(
-    instance: &'inst Arc<Instance>,
+fn get_device(
+    instance: &'_ Arc<Instance>,
     surface: Arc<Surface<Sendable<Rc<WindowContext>>>>,
-) -> (PhysicalDevice<'inst>, Arc<Device>, Arc<Queue>) {
+) -> (PhysicalDevice<'_>, Arc<Device>, Arc<Queue>) {
     let (physical_device, queue_family) = PhysicalDevice::enumerate(&instance)
         .filter_map(|p| {
             p.queue_families()
@@ -743,14 +725,17 @@ fn get_device<'inst>(
     )
 }
 
+type SdlSwapchain = Arc<Swapchain<Sendable<Rc<WindowContext>>>>;
+type SdlSwapchainImagesVector = Vec<Arc<SwapchainImage<Sendable<Rc<WindowContext>>>>>;
+
 fn create_raw_swapchain(
     window: &Window,
     device: Arc<Device>,
     surface: Arc<Surface<Sendable<Rc<WindowContext>>>>,
     physical: PhysicalDevice,
 ) -> (
-    Arc<Swapchain<Sendable<Rc<WindowContext>>>>,
-    Vec<Arc<SwapchainImage<Sendable<Rc<WindowContext>>>>>,
+    SdlSwapchain,
+    SdlSwapchainImagesVector,
 ) {
     // Get all the device capabilities and limitations
     let caps = surface
@@ -767,7 +752,7 @@ fn create_raw_swapchain(
         let size = window.size();
         [size.0, size.1]
     };
-    Swapchain::start(device.clone(), surface.clone())
+    Swapchain::start(device, surface)
         .dimensions(dimensions)
         .usage(ImageUsage::color_attachment())
         .format(format)

@@ -15,7 +15,7 @@ impl FPSHandler {
     pub fn new(fps: u16) -> Self {
         Self {
             last_loop: time::Instant::now(),
-            fps: fps,
+            fps,
         }
     }
 
