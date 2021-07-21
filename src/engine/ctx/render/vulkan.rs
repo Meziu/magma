@@ -42,7 +42,7 @@ use vulkano::VulkanObject;
 use sdl2::video::{Window, WindowContext};
 
 // other imports
-use super::draw_objects::{Draw, DrawFlags, DrawObject, Sprite, SpriteObject};
+use super::draw_objects::{Draw, DrawFlags, DrawObject, Sprite, SpriteObject, Primitive, PrimitiveObject};
 use super::sendable::Sendable;
 use cgmath::{Vector2, Vector4};
 use png;
@@ -423,6 +423,15 @@ impl GraphicsHandler {
         self.append_draw_object(sprite.clone());
 
         SpriteObject::new(sprite)
+    }
+
+    /// Create a new rectangular PrimitiveObject
+    pub fn new_rectangle(&mut self, scale: Vector2<f32>, color: Vector4<f32>, global_position: Vector2<f32>, z_index: u8) -> PrimitiveObject {
+        let primitive = Rc::new(RefCell::new(Primitive::rectangle(scale, color, global_position, self, z_index)));
+
+        self.append_draw_object(primitive.clone());
+
+        PrimitiveObject::new(primitive)
     }
 
     /// Append a new DrawObject to the draw_object vector for draw

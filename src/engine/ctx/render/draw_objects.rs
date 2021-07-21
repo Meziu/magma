@@ -266,6 +266,7 @@ type PrimitiveImmutableDescriptorSet = PersistentDescriptorSet<(
     ),
     PersistentDescriptorSetBuf<Arc<CpuAccessibleBuffer<GlobalUniformData>>>,
 )>;
+pub type PrimitiveObject = GraphicObject<Primitive>;
 
 /// Struct to hold sprite specific data that both CPU and GPU must access
 #[derive(Copy, Clone, Debug)]
@@ -292,25 +293,12 @@ pub struct Primitive {
 }
 
 impl Primitive {
-    /// Create a new Primitive of rectangular shape
-    /// Here the `scale` parameter is also the dimensions of a pre-built rectangle (a Vector2(1.0, 1.0) would be a pixel when zoom isn't applied)
-    pub fn rectangle(scale: Vector2<f32>, color: Vector4<f32>, global_position: Vector2<f32>, gl_handler: &GraphicsHandler, z_index: u8) -> Self {
-        let vao = VertexArray::from(vec![
-            Vertex {
-                vert_pos: [-1.0, -1.0],
-            },
-            Vertex {
-                vert_pos: [-1.0, 1.0],
-            },
-            Vertex {
-                vert_pos: [1.0, 1.0],
-            },
-            Vertex {
-                vert_pos: [1.0, -1.0],
-            },
-        ]);
-        let indices = gl_handler.new_index_buffer(&[0, 1, 2, 2, 3, 0]);
-        let vertex_buffer = gl_handler.new_vertex_buffer(vao, indices);
+    /// Complex function to create custom shapes
+    /// Should be avoided in favour of premade shapes
+    pub fn new(vertex_array: VertexArray, index_array: &[u16], scale: Vector2<f32>, color: Vector4<f32>, global_position: Vector2<f32>, gl_handler: &GraphicsHandler, z_index: u8) -> Self {
+        let indices = gl_handler.new_index_buffer(index_array);
+
+        let vertex_buffer = gl_handler.new_vertex_buffer(vertex_array, indices);
 
         let persistent_set = gl_handler.create_empty_descriptor_set_builder("Primitive", 0);
 
@@ -352,6 +340,27 @@ impl Primitive {
             global_position,
             scale,
         }
+    }
+
+    /// Create a new Primitive of rectangular shape
+    /// Here the `scale` parameter is also the dimensions of a pre-built rectangle (a Vector2(1.0, 1.0) would be a pixel when zoom isn't applied)
+    pub fn rectangle(scale: Vector2<f32>, color: Vector4<f32>, global_position: Vector2<f32>, gl_handler: &GraphicsHandler, z_index: u8) -> Self {
+        let vao = VertexArray::from(vec![
+            Vertex {
+                vert_pos: [-1.0, -1.0],
+            },
+            Vertex {
+                vert_pos: [-1.0, 1.0],
+            },
+            Vertex {
+                vert_pos: [1.0, 1.0],
+            },
+            Vertex {
+                vert_pos: [1.0, -1.0],
+            },
+        ]);
+        
+        Self::new(vao, &[0, 1, 2, 2, 3, 0], scale, color, global_position, gl_handler, z_index)
     }
 }
 

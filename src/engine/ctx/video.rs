@@ -8,7 +8,8 @@ use sdl2::{Sdl, VideoSubsystem};
 use super::vulkan::GraphicsHandler;
 
 // other imports
-use super::draw_objects::SpriteObject;
+use super::draw_objects::{SpriteObject, PrimitiveObject};
+use cgmath::{Vector2, Vector4};
 
 /// Component of the CtxHandler to handle all calls to graphic APIs
 pub struct VideoHandler {
@@ -50,6 +51,10 @@ impl VideoHandler {
 
     pub fn new_sprite(&mut self, texture_path: &str, z_index: u8) -> SpriteObject {
         self.gl_handler.new_sprite(texture_path, z_index)
+    }
+
+    pub fn new_rectangle(&mut self, scale: Vector2<f32>, color: Vector4<f32>, global_position: Vector2<f32>, z_index: u8) -> PrimitiveObject {
+        self.gl_handler.new_rectangle(scale, color, global_position, z_index)
     }
 
     /// Frame-by-frame update of the graphics and everything related

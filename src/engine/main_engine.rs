@@ -4,6 +4,8 @@ use std::path::Path;
 // import the ctx mdule
 use super::ctx::CtxHandler;
 
+// other imports
+
 /// Main struct to handle the whole program in all it's components
 pub struct Engine {
     ctx_handler: CtxHandler,
@@ -35,8 +37,10 @@ impl Engine {
 
         // before, z index wasn't sorted and depth depended on the order in the vector
         // now the order isn't important but the z index must be specified
-        let _ferris = self.ctx_handler.video.new_sprite("assets/rust.png", 0);
+        let _ferris = self.ctx_handler.video.new_sprite("assets/rust.png", 1);
         let python = self.ctx_handler.video.new_sprite("assets/python.png", 1);
+
+        let _rect = self.ctx_handler.video.new_rectangle((100.0, 100.0).into(), (0.0, 0.0, 1.0, 1.0).into(), (200.0, 200.0).into(), 2);
 
         let mut i = 0.0;
         'mainloop: loop {

@@ -6,15 +6,15 @@ layout(location = 0) in vec2 vert_pos;
 // color and texture coordinates for the fragment shader
 layout(location = 0) out vec4 frag_color;
 
-// Data passed by the Sprite object
-layout(set = 0, binding = 1) uniform readonly PrimitiveData {
+// Data passed by the Primitive object
+layout(set = 0, binding = 0) uniform readonly PrimitiveData {
     vec4 color;
     vec4 global_position;
     vec4 scale;
 } primitive_data;
 
 // Data passed by the Graphics Handler
-layout(set = 0, binding = 2) uniform readonly GlobalData {
+layout(set = 0, binding = 1) uniform readonly GlobalData {
     uvec4 window_size;
     vec4 camera_position;
     vec4 camera_scale;
