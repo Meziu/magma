@@ -259,25 +259,42 @@ impl Draw for Sprite {
     }
 }
 
+type PrimitiveImmutableDescriptorSet = PersistentDescriptorSet<(
+    (
+        (),
+        PersistentDescriptorSetBuf<Arc<CpuAccessibleBuffer<PrimitiveData>>>,
+    ),
+    PersistentDescriptorSetBuf<Arc<CpuAccessibleBuffer<GlobalUniformData>>>,
+)>;
+
+/// Struct to hold sprite specific data that both CPU and GPU must access
+#[derive(Copy, Clone, Debug)]
+struct PrimitiveData {
+    color: Vector4<f32>,
+    global_position: Vector4<f32>,
+    scale: Vector4<f32>,
+}
+
 /// Struct to handle primitive shapes with simple colours
 #[derive(Clone)]
 pub struct Primitive {
     vertex_buffer: VertexBuffer,
-    descriptor_set: Arc<SpriteImmutableDescriptorSet>,
-    cpu_buffer: Arc<CpuAccessibleBuffer<SpriteData>>,
+    descriptor_set: Arc<PrimitiveImmutableDescriptorSet>,
+    cpu_buffer: Arc<CpuAccessibleBuffer<PrimitiveData>>,
 
-    // flags and params
+    // general flags and params
     z_index: u8,
     draw_flags: DrawFlags,
 
     pub color: Vector4<f32>,
     pub global_position: Vector2<f32>,
     pub scale: Vector2<f32>,
-    image_dimensions: Vector2<u32>,
 }
 
 impl Primitive {
-    pub fn pixel(texture_path: &str, gl_handler: &GraphicsHandler, z_index: u8) -> Self {
+    /// Create a new Primitive of rectangular shape
+    /// Here the `scale` parameter is also the dimensions of a pre-built rectangle (a Vector2(1.0, 1.0) would be a pixel when zoom isn't applied)
+    pub fn rectangle(scale: Vector2<f32>, color: Vector4<f32>, global_position: Vector2<f32>, gl_handler: &GraphicsHandler, z_index: u8) -> Self {
         let vao = VertexArray::from(vec![
             Vertex {
                 vert_pos: [-1.0, -1.0],
@@ -296,27 +313,19 @@ impl Primitive {
         let vertex_buffer = gl_handler.new_vertex_buffer(vao, indices);
 
         let persistent_set = gl_handler.create_empty_descriptor_set_builder("Primitive", 0);
-        let sampler = gl_handler.create_texture_sampler();
 
-        let color = Vector4::new(1.0, 1.0, 1.0, 1.0);
-        let global_position = Vector2::new(0.0, 0.0);
-        let scale = Vector2::new(1.0, 1.0);
 
-        let (persistent_set, image_dimensions) =
-            gl_handler.create_and_bind_texture(texture_path, persistent_set, sampler);
-
-        let sprite_data = SpriteData {
+        let primitive_data = PrimitiveData {
             global_position: global_position.extend(0.0).extend(0.0),
             color,
             scale: scale.extend(0.0).extend(0.0),
-            image_dimensions: image_dimensions.extend(0).extend(0),
         };
 
         let cpu_buffer = CpuAccessibleBuffer::from_data(
             gl_handler.get_device(),
             BufferUsage::uniform_buffer(),
             true,
-            sprite_data,
+            primitive_data,
         )
         .unwrap();
 
@@ -342,7 +351,6 @@ impl Primitive {
             color,
             global_position,
             scale,
-            image_dimensions,
         }
     }
 }
