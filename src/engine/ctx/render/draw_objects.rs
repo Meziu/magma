@@ -295,7 +295,7 @@ impl Primitive {
         let indices = gl_handler.new_index_buffer(&[0, 1, 2, 2, 3, 0]);
         let vertex_buffer = gl_handler.new_vertex_buffer(vao, indices);
 
-        let persistent_set = gl_handler.create_empty_descriptor_set_builder("Sprite", 0);
+        let persistent_set = gl_handler.create_empty_descriptor_set_builder("Primitive", 0);
         let sampler = gl_handler.create_texture_sampler();
 
         let color = Vector4::new(1.0, 1.0, 1.0, 1.0);
@@ -355,7 +355,7 @@ impl Draw for Primitive {
     ) {
         draw(
             gl_handler,
-            gl_handler.get_pipeline("Sprite"),
+            gl_handler.get_pipeline("Primitive"),
             command_buffer,
             self.vertex_buffer.get_vertices(),
             self.vertex_buffer.get_indices(),
