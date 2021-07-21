@@ -66,17 +66,21 @@ impl CtxHandler {
     }
 
     /// Public function to set the Ctx's framerate
-    pub fn set_framerate(&mut self, new_framerate: u16) {
-        self.fps_manager.set_fps(new_framerate);
+    pub fn set_framerate_limit(&mut self, new_framerate: u16) {
+        self.fps_manager.set_limit(1. / new_framerate as f32);
     }
 
     /// Get the current framerate
-    pub fn get_framerate(&self) -> u16 {
+    pub fn get_framerate_limit(&self) -> u16 {
+        (1. / self.fps_manager.get_limit()) as u16
+    }
+
+    pub fn get_current_framerate(&self) -> u16 {
         self.fps_manager.get_fps()
     }
 
     /// Wait for the next frame based on the current framerate
     pub fn wait(&mut self) {
-        self.fps_manager.wait();
+        self.fps_manager.wait()
     }
 }

@@ -61,6 +61,8 @@ impl Engine {
             self.ctx_handler.video.update();
 
             self.ctx_handler.wait();
+
+            println!("{}", self.ctx_handler.get_current_framerate());
         }
     }
 }

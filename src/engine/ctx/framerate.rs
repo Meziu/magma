@@ -1,44 +1,55 @@
 //! Quick implementation of a framerate handler to avoid needing SDL2_gfx
 
 // standard imports
-use std::time;
+use std::time::{Duration, Instant};
 use std::thread;
 
 
 /// Basic struct to handle FPS waiting
 pub struct FPSHandler {
-    last_loop: time::Instant,
-    fps: u16,
+    last_loop: Instant,
+    delta: f32,
+    limit: f32,
 }
 
 impl FPSHandler {
-    pub fn new(fps: u16) -> Self {
+    pub fn new(limit: u16) -> Self {
+        let limit = 1. / limit as f32;
+
         Self {
-            last_loop: time::Instant::now(),
-            fps,
+            last_loop: Instant::now(),
+            delta: 0.0,
+            limit,
         }
     }
 
+    pub fn get_limit(&self) -> f32 {
+        self.limit
+    }
+    pub fn set_limit(&mut self, new_limit: f32) {
+        self.limit = new_limit;
+    }
+
     pub fn get_fps(&self) -> u16 {
-        self.fps
+        (1. / self.get_delta()).round() as u16
     }
 
-    pub fn set_fps(&mut self, new_fps: u16) {
-        self.fps = new_fps;
+    pub fn get_delta(&self) -> f32 {
+        self.delta
     }
 
-    pub fn wait(&mut self) -> f32 {
-        let time_elapsed = self.last_loop.elapsed();
+    pub fn wait(&mut self) {
+        let time_elapsed = self.last_loop.elapsed().as_secs_f32();
 
-        let total_nanos = time_elapsed.as_secs() * 1_000_000_000 + time_elapsed.subsec_nanos() as u64;
-        let delta = (1. / self.fps as f32) * 1_000_000_000. - (total_nanos as f32);
+        let wait_time = self.limit - time_elapsed;
 
-        if delta > 0. {
-            thread::sleep(time::Duration::new(0, delta as u32))
+        // If we are early on the framerate limit, wait for it
+        if wait_time > 0. {
+            thread::sleep(Duration::from_secs_f32(wait_time));
         };
 
-        self.last_loop = time::Instant::now();
+        self.delta = self.last_loop.elapsed().as_secs_f32();
 
-        delta
+        self.last_loop = Instant::now();
     }
 }
