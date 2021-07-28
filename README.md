@@ -1,4 +1,4 @@
-# Pholidota
+# Magma
 ## Overview
 This is a personal project to make my first steps into user applications. I've always been a CLI guy, 
 but the new knowledge I got from Rust gave me confidence to try out Graphic APIs. 
