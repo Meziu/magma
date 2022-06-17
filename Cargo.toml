@@ -7,7 +7,7 @@ edition = "2018"
 [dependencies]
 vulkano = "0.29.0"
 vulkano-shaders = "0.24.0"
-ash = "0.32.1"
+ash = "0.33.1"
 png = "0.16.8"
 cgmath = "0.18.0"
 flags = "0.1.5"
